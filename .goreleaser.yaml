@@ -24,7 +24,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -X github.com/ozontech/framer/buildinfo.Version={{.Version}}
+      - -X main.Version={{.Version}}
 
 archives:
   - format: tar.gz

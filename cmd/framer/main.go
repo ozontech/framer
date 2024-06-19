@@ -9,7 +9,6 @@ import (
 
 	"github.com/alecthomas/kong"
 	mangokong "github.com/alecthomas/mango-kong"
-	"github.com/ozontech/framer/buildinfo"
 )
 
 var CLI struct {
@@ -20,12 +19,14 @@ var CLI struct {
 	DebugServer bool              `help:"Enable debug server."`
 }
 
+var Version = "unknown"
+
 type VersionFlag string
 
 func (v VersionFlag) Decode(ctx *kong.DecodeContext) error { return nil }
 func (v VersionFlag) IsBool() bool                         { return true }
 func (v VersionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
-	fmt.Println(buildinfo.Version)
+	fmt.Println(Version)
 	app.Exit(0)
 	return nil
 }
