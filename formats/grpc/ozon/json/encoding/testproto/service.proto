@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+option go_package = "./;tesproto";
+
+package testpackage;
+
+service TestService {
+    rpc TestMethod0 (TestRequest0) returns (TestResponse0) {}
+    rpc TestMethod1 (TestRequest1) returns (TestResponse1) {}
+    rpc TestMethod2 (TestRequest2) returns (TestResponse2) {}
+    rpc TestMethod3 (TestRequest3) returns (TestResponse3) {}
+    rpc TestMethod4 (TestRequest4) returns (TestResponse4) {}
+    rpc TestMethod5 (TestRequest5) returns (TestResponse5) {}
+    rpc TestMethod6 (TestRequest6) returns (TestResponse6) {}
+    rpc TestMethod7 (TestRequest7) returns (TestResponse7) {}
+    rpc TestMethod8 (TestRequest8) returns (TestResponse8) {}
+    rpc TestMethod9 (TestRequest9) returns (TestResponse9) {}
+}
+
+message  TestRequest0 { string request = 1; }
+message  TestRequest1 { string request = 1; }
+message  TestRequest2 { string request = 1; }
+message  TestRequest3 { string request = 1; }
+message  TestRequest4 { string request = 1; }
+message  TestRequest5 { string request = 1; }
+message  TestRequest6 { string request = 1; }
+message  TestRequest7 { string request = 1; }
+message  TestRequest8 { string request = 1; }
+message  TestRequest9 { string request = 1; }
+message TestResponse0 { string answer = 1; }
+message TestResponse1 { string answer = 1; }
+message TestResponse2 { string answer = 1; }
+message TestResponse3 { string answer = 1; }
+message TestResponse4 { string answer = 1; }
+message TestResponse5 { string answer = 1; }
+message TestResponse6 { string answer = 1; }
+message TestResponse7 { string answer = 1; }
+message TestResponse8 { string answer = 1; }
+message TestResponse9 { string answer = 1; }

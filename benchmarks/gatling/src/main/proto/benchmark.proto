@@ -1,0 +1,449 @@
+syntax = "proto3";
+
+package benchmark;
+
+option java_package = "bench";
+
+import "google/api/annotations.proto";
+
+service Benchmark {
+    /*
+       Пустой запрос
+
+       Ожидается пустой запрос
+       Возвращает захардкоженный ответ
+    */
+    rpc BlankGet (BlankGetRequest) returns (BlankGetResponse) {
+        option (google.api.http) = {
+            get: "/hello"
+        };
+    }
+
+    /*
+       Эхо-запрос
+
+       В ответе возвращает данные, пришедшие в запросе
+    */
+    rpc EqualResponse (EqualGetRequest) returns (EqualGetResponse) {
+        option (google.api.http) = {
+            post: "/equal"
+            body: "*"
+        };
+    }
+
+    /*
+       Медленная ручка
+
+       В ответе возвращает количество милисекунд, которые ждала ручка до ответа
+       Если клиент передал delay равным 0 (или не передал), ручка ждет 1 секунду.
+    */
+    rpc SlowGet (SlowGetRequest) returns (SlowGetResponse) {
+        option (google.api.http) = {
+            get: "/slow"
+        };
+    }
+
+    // Ручка, которая всегда возращает 500
+    //
+    // Ручка возвращает 500 ошибку
+    rpc BadGet (BlankGetRequest) returns (BadGetResponse) {
+        option (google.api.http) = {
+            get: "/bad"
+        };
+    }
+
+    // Генерирует список случайных чисел
+    rpc RandomGet (RandomGetRequest) returns (RandomGetResponse) {
+        option (google.api.http).get = "/random";
+    }
+
+    // Ручка для тестирования запросов с кол-ом полей больше 1
+    rpc ComplexGet (ComplexGetRequest) returns (ComplexGetResponse) {
+        option (google.api.http).get = "/complex";
+    }
+
+    // Очень медленная ручка (ожидание - 1 минута)
+    rpc VerySlowGet (BlankGetRequest) returns (VerySlowGetResponse) {
+        option (google.api.http).get = "/very-slow";
+    }
+
+    // Ручка, которая всегда возвращает либо http:404 либо grpc:5
+    rpc NotFoundGet (NotFoundGetRequest) returns (NotFoundGetResponse) {
+        option (google.api.http).get = "/not_found";
+    }
+
+    // Ручка, которая всегда возвращает либо http:404 либо grpc:12
+    rpc UnimplementedGet (UnimplementedGetRequest) returns (UnimplementedGetResponse) {
+        option (google.api.http).get = "/unimplemented";
+    }
+
+    // Ручка для тестирования сервер-стримов
+    rpc ServerStream (ServerStreamRequest) returns (stream ServerStreamResponse) {
+    }
+    // Ручка для тестирования клиент-стримов
+    rpc ClientStream (stream ClientStreamRequest) returns (ClientStreamResponse) {
+    }
+    // Ручка для тестирования двунаправленных стримов
+    rpc BidiStream (stream BidiStreamRequest) returns (stream BidiStreamResponse) {
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentHTTPMethodsWhitelist (AgentHTTPMethodsWhitelistRequest) returns (AgentHTTPMethodsWhitelistResponse) {
+        option (google.api.http) = {
+            get: "/agent_http_methods_whitelist"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentHTTPHeadersWhitelist (AgentHTTPHeadersWhitelistRequest) returns (AgentHTTPHeadersWhitelistResponse) {
+        option (google.api.http) = {
+            get: "/agent_http_headers_whitelist"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentHTTPHeadersBlacklist (AgentHTTPHeadersBlacklistRequest) returns (AgentHTTPHeadersBlacklistResponse) {
+        option (google.api.http) = {
+            get: "/agent_http_headers_blacklist"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentGRPCMethodsWhitelist (AgentGRPCMethodsWhitelistRequest) returns (AgentGRPCMethodsWhitelistResponse) {
+        option (google.api.http) = {
+            get: "/agent_grpc_methods_whitelist"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentGRPCMetadataWhitelist (AgentGRPCMetadataWhitelistRequest) returns (AgentGRPCMetadataWhitelistResponse) {
+        option (google.api.http) = {
+            get: "/agent_grpc_metadata_whitelist"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentGRPCMetadataBlacklist (AgentGRPCMetadataBlacklistRequest) returns (AgentGRPCMetadataBlacklistResponse) {
+        option (google.api.http) = {
+            get: "/agent_grpc_metadata_blacklist"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetHTTPMethodsWhitelist (AgentSetHTTPMethodsWhitelistRequest) returns (AgentSetHTTPMethodsWhitelistResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_http_methods_whitelist"
+            body: "*"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetHTTPHeadersWhitelist (AgentSetHTTPHeadersWhitelistRequest) returns (AgentSetHTTPHeadersWhitelistResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_http_headers_whitelist"
+            body: "*"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetHTTPHeadersBlacklist (AgentSetHTTPHeadersBlacklistRequest) returns (AgentSetHTTPHeadersBlacklistResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_http_headers_blacklist"
+            body: "*"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetGRPCMethodsWhitelist (AgentSetGRPCMethodsWhitelistRequest) returns (AgentSetGRPCMethodsWhitelistResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_grpc_methods_whitelist"
+            body: "*"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetGRPCMetadataWhitelist (AgentSetGRPCMetadataWhitelistRequest) returns (AgentSetGRPCMetadataWhitelistResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_grpc_metadata_whitelist"
+            body: "*"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetGRPCMetadataBlacklist (AgentSetGRPCMetadataBlacklistRequest) returns (AgentSetGRPCMetadataBlacklistResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_grpc_metadata_blacklist"
+            body: "*"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentIsEnabled (AgentIsEnabledRequest) returns (AgentIsEnabledResponse) {
+        option (google.api.http) = {
+            get: "/agent_is_enabled"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentIsConnected (AgentIsConnectedRequest) returns (AgentIsConnectedResponse) {
+        option (google.api.http) = {
+            get: "/agent_is_connected"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentIsActive (AgentIsActiveRequest) returns (AgentIsActiveResponse) {
+        option (google.api.http) = {
+            get: "/agent_is_active"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentServiceName (AgentServiceNameRequest) returns (AgentServiceNameResponse) {
+        option (google.api.http) = {
+            get: "/agent_service_name"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetServiceName (AgentSetServiceNameRequest) returns (AgentSetServiceNameResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_service_name"
+            body: "*"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentDispatcherAddress (AgentDispatcherAddressRequest) returns (AgentDispatcherAddressResponse) {
+        option (google.api.http) = {
+            get: "/agent_dispatcher_address"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetDispatcherAddress (AgentSetDispatcherAddressRequest) returns (AgentSetDispatcherAddressResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_dispatcher_address"
+            body: "*"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentCollectorAddress (AgentCollectorAddressRequest) returns (AgentCollectorAddressResponse) {
+        option (google.api.http) = {
+            get: "/agent_collector_address"
+        };
+    }
+
+    // Ручка для автоматического тестирования внутреннего состояния агента
+    rpc AgentSetCollectorAddress (AgentSetCollectorAddressRequest) returns (AgentSetCollectorAddressResponse) {
+        option (google.api.http) = {
+            post: "/agent_set_collector_address"
+            body: "*"
+        };
+    }
+
+    // Ручка для получения нужного GRPC statusCode исходя из числа в теле запроса
+    rpc CodeFromInput (CodeFromInputRequest) returns (CodeFromInputResponse) {
+    }
+}
+
+message BlankGetRequest {
+}
+
+message BlankGetResponse {
+    string hello = 1;
+}
+
+message EqualGetRequest {
+    string request = 1;
+}
+
+message EqualGetResponse {
+    string answer = 1;
+}
+
+message SlowGetRequest {
+    int32 delay_in_milliseconds = 1;
+    bool cancelable = 2;
+}
+
+message SlowGetResponse {
+    string wait = 1;
+}
+
+message BadGetResponse {
+}
+
+message RandomGetRequest {
+    int32 amount = 1;
+    int32 low = 2;
+    int32 high = 3;
+}
+
+message RandomGetResponse {
+    repeated int32 random_ints = 1;
+}
+
+message ComplexGetRequest {
+    string name = 1;
+    repeated string strings_array = 2;
+    int32 some_integer = 3;
+}
+
+message ComplexGetResponse {
+    string result = 1;
+}
+
+message VerySlowGetResponse {
+    string wait = 1;
+}
+
+message NotFoundGetRequest {}
+message NotFoundGetResponse {}
+
+message UnimplementedGetRequest {}
+message UnimplementedGetResponse {}
+
+message ServerStreamRequest {
+    int32 count = 1;
+}
+message ServerStreamResponse {
+    int32 value = 1;
+}
+
+message ClientStreamRequest {
+    int32 value = 1;
+}
+message ClientStreamResponse {
+    int32 sum = 1;
+}
+
+message BidiStreamRequest {
+    int32 value = 1;
+}
+message BidiStreamResponse {
+    int32 squared_value = 1;
+}
+
+message AgentHTTPMethodsWhitelistRequest {}
+message AgentHTTPMethodsWhitelistResponse {
+    repeated string http_methods_whitelist = 1;
+    bool is_set = 2;
+}
+
+message AgentHTTPHeadersWhitelistRequest {}
+message AgentHTTPHeadersWhitelistResponse {
+    repeated string http_headers_whitelist = 1;
+    bool is_set = 2;
+}
+
+message AgentHTTPHeadersBlacklistRequest {}
+message AgentHTTPHeadersBlacklistResponse {
+    repeated string http_headers_blacklist = 1;
+    bool is_set = 2;
+}
+
+message AgentGRPCMethodsWhitelistRequest {}
+message AgentGRPCMethodsWhitelistResponse {
+    repeated string grpc_methods_whitelist = 1;
+    bool is_set = 2;
+}
+
+message AgentGRPCMetadataWhitelistRequest {}
+message AgentGRPCMetadataWhitelistResponse {
+    repeated string grpc_metadata_whitelist = 1;
+    bool is_set = 2;
+}
+
+message AgentGRPCMetadataBlacklistRequest {}
+message AgentGRPCMetadataBlacklistResponse {
+    repeated string grpc_metadata_blacklist = 1;
+    bool is_set = 2;
+}
+
+message AgentSetHTTPMethodsWhitelistRequest {
+    repeated string http_methods_whitelist = 1;
+}
+message AgentSetHTTPMethodsWhitelistResponse {}
+
+message AgentSetHTTPHeadersWhitelistRequest {
+    repeated string http_headers_whitelist = 1;
+}
+message AgentSetHTTPHeadersWhitelistResponse {}
+
+message AgentSetHTTPHeadersBlacklistRequest {
+    repeated string http_headers_blacklist = 1;
+}
+message AgentSetHTTPHeadersBlacklistResponse {}
+
+message AgentSetGRPCMethodsWhitelistRequest {
+    repeated string grpc_methods_whitelist = 1;
+}
+message AgentSetGRPCMethodsWhitelistResponse {}
+
+message AgentSetGRPCMetadataWhitelistRequest {
+    repeated string grpc_metadata_whitelist = 1;
+}
+message AgentSetGRPCMetadataWhitelistResponse {}
+
+message AgentSetGRPCMetadataBlacklistRequest {
+    repeated string grpc_metadata_blacklist = 1;
+}
+message AgentSetGRPCMetadataBlacklistResponse {}
+
+message AgentIsEnabledRequest {
+}
+message AgentIsEnabledResponse {
+    bool is_enabled = 1;
+}
+
+message AgentIsConnectedRequest {
+}
+message AgentIsConnectedResponse {
+    bool is_connected = 1;
+}
+
+message AgentIsActiveRequest {
+}
+message AgentIsActiveResponse {
+    bool is_active = 1;
+}
+
+message AgentServiceNameRequest {
+}
+message AgentServiceNameResponse {
+    string service_name = 1;
+}
+
+message AgentSetServiceNameRequest {
+    string service_name = 1;
+}
+message AgentSetServiceNameResponse {}
+
+message AgentDispatcherAddressRequest {
+}
+message AgentDispatcherAddressResponse {
+    string dispatcher_address = 1;
+}
+
+message AgentSetDispatcherAddressRequest {
+    string dispatcher_address = 1;
+}
+message AgentSetDispatcherAddressResponse {}
+
+message AgentCollectorAddressRequest {
+}
+message AgentCollectorAddressResponse {
+    string collector_address = 1;
+}
+
+message AgentSetCollectorAddressRequest {
+    string collector_address = 1;
+}
+message AgentSetCollectorAddressResponse {}
+
+message CodeFromInputRequest{
+    int32 code = 1;
+}
+message CodeFromInputResponse{}

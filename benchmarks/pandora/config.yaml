@@ -1,0 +1,21 @@
+pools:
+  - id: GRPC
+    gun:
+      type: grpc
+      target: localhost:9090
+      reflect_port: 9091
+      tls: false
+    ammo:
+      type: grpc/json
+      file: requests.json
+    result:
+      type: discard
+    rps:
+      - duration: 1m
+        type: unlimited
+    discard_overflow: true
+    startup:
+      type: once
+      # Clients count. Yandex pandora don't use http/2 multiplexing,
+      # so we must use huge amount of connections
+      times: 1500

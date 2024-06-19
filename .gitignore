@@ -1,0 +1,4 @@
+.idea
+phout.log
+*.test
+*.out

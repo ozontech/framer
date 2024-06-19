@@ -1,0 +1,5 @@
+.git
+LICENSE
+*.md
+assets
+Dockerfile
