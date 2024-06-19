@@ -3,6 +3,8 @@ framer is the most performant grpc load generator
 
 ## Performance
 ![benchmark chart](./assets/benchmark_chart.png)
+
+Load generators was limited in 2 CPU.
 Load generators configurations are available in [benchmarks directory](./benchmarks)
 
 ### How we achive this performance values?
