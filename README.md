@@ -1,8 +1,6 @@
 # framer
 framer is the most performant grpc load generator
 
-[TOC]
-
 ## Performance
 ![benchmark chart](./assets/benchmark_chart.png)
 Load generators configurations are available in [benchmarks directory](./benchmarks)
@@ -17,7 +15,7 @@ Load generators configurations are available in [benchmarks directory](./benchma
 This is alpha version. Public api and request file format may be changed.
 
 ## Install
-Download binary from [github release page](https://github.com/ozon/framer/releases/latest) and place it in your PATH.
+Download binary from [github release page](./releases/latest) and place it in your PATH.
 
 ### Compile
 **Build using go**
@@ -29,12 +27,12 @@ go build . -o framer
 ./framer --help
 ```
 
-**Install using go
+**Install using go**
 ```sh
 go install github.com/ozontech/framer/cmd/framer@latest
 ```
 
-**Run using docker
+**Run using docker**
 ```sh
 git clone https://github.com/ozontech/framer
 cd framer

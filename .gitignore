@@ -2,3 +2,5 @@
 phout.log
 *.test
 *.out
+
+dist/
