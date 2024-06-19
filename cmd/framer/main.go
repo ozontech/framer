@@ -2,19 +2,32 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	_ "net/http/pprof" //nolint:gosec
 
 	"github.com/alecthomas/kong"
 	mangokong "github.com/alecthomas/mango-kong"
+	"github.com/ozontech/framer/buildinfo"
 )
 
 var CLI struct {
 	Load        LoadCommand       `cmd:"" help:"Starting load generation."`
 	Convert     ConvertCommand    `cmd:"" help:"Converting request files."`
 	Man         mangokong.ManFlag `help:"Write man page." hidden:""`
+	Version     VersionFlag       `name:"version" help:"Print version information and quit"`
 	DebugServer bool              `help:"Enable debug server."`
+}
+
+type VersionFlag string
+
+func (v VersionFlag) Decode(ctx *kong.DecodeContext) error { return nil }
+func (v VersionFlag) IsBool() bool                         { return true }
+func (v VersionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
+	fmt.Println(buildinfo.Version)
+	app.Exit(0)
+	return nil
 }
 
 func main() {
