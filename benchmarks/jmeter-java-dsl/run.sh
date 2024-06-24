@@ -1,0 +1,2 @@
+#!env sh
+make verify

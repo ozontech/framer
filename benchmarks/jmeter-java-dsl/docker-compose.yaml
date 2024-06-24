@@ -1,0 +1,20 @@
+name: jmeter-benchmark
+include:
+ - ../dumb-server/docker-compose.yaml
+services:
+  jmeter:
+    container_name: jmeter
+    image: jmeter
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    network_mode: host
+    working_dir: /app
+    tty: true
+    volumes:
+       - ./:/app
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 3G
