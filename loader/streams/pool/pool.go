@@ -4,11 +4,10 @@ import (
 	"math"
 	"sync"
 
+	"github.com/ozontech/framer/consts"
 	"github.com/ozontech/framer/loader/flowcontrol"
 	"github.com/ozontech/framer/loader/types"
 )
-
-const defaultInitialWindowSize = 65535
 
 type StreamsPool struct {
 	reporter types.LoaderReporter
@@ -21,21 +20,18 @@ type StreamsPool struct {
 	initialWindowSize    uint32
 }
 
-func NewStreamsPool(
-	reporter types.LoaderReporter,
-	initSize uint32,
-	limit uint32, // limit = 0 интерпретируется как неограниченное количество
-) *StreamsPool {
-	if limit == 0 {
-		limit = math.MaxUint32
-	}
-	return &StreamsPool{
+func NewStreamsPool(reporter types.LoaderReporter, opts ...Opt) *StreamsPool {
+	p := &StreamsPool{
 		reporter:             reporter,
 		cond:                 sync.NewCond(&sync.Mutex{}),
-		pool:                 make([]*streamImpl, 0, initSize),
-		maxConcurrentStreams: limit,
-		initialWindowSize:    defaultInitialWindowSize,
+		pool:                 make([]*streamImpl, 0, 1024),
+		maxConcurrentStreams: math.MaxUint32,
+		initialWindowSize:    consts.DefaultInitialWindowSize,
 	}
+	for _, o := range opts {
+		o.apply(p)
+	}
+	return p
 }
 
 func (p *StreamsPool) Acquire(streamID uint32, tag string) types.Stream {
@@ -79,18 +75,6 @@ func (p *StreamsPool) InUse() uint32 {
 	return p.inUse
 }
 
-func (p *StreamsPool) SetInitialWindowSize(size uint32) {
-	p.cond.L.Lock()
-	defer p.cond.L.Unlock()
-	p.initialWindowSize = size
-}
-
-func (p *StreamsPool) SetLimit(limit uint32) {
-	p.cond.L.Lock()
-	defer p.cond.L.Unlock()
-	p.maxConcurrentStreams = limit
-}
-
 func (p *StreamsPool) WaitAllReleased() <-chan struct{} {
 	ch := make(chan struct{})
 
@@ -120,4 +104,20 @@ func (s *streamImpl) FC() types.FlowControl { return s.fc }
 func (s *streamImpl) End() {
 	s.StreamState.End()
 	s.pool.release(s)
+}
+
+type Opt interface {
+	apply(*StreamsPool)
+}
+
+type WithMaxConcurrentStreams uint32
+
+func (s WithMaxConcurrentStreams) apply(p *StreamsPool) {
+	p.maxConcurrentStreams = uint32(s)
+}
+
+type WithInitialWindowSize uint32
+
+func (s WithInitialWindowSize) apply(p *StreamsPool) {
+	p.initialWindowSize = uint32(s)
 }

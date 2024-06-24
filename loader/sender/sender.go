@@ -23,8 +23,9 @@ type frame struct {
 }
 
 type Sender struct {
-	streamPool  *streamsPool.StreamsPool
-	streamStore types.StreamStore
+	maxFrameSize int
+	streamPool   *streamsPool.StreamsPool
+	streamStore  types.StreamStore
 
 	fcConn          types.FlowControl
 	conn            io.Writer
@@ -43,13 +44,16 @@ func NewSender(
 	priorityChunkChan chan []byte,
 	streamPool *streamsPool.StreamsPool,
 	streamStore types.StreamStore,
+	hpackEncWrapper *hpackwrapper.Wrapper,
+	maxFrameSize int,
 ) *Sender {
 	return &Sender{
+		maxFrameSize,
 		streamPool,
 		streamStore,
 		fcConn,
 		conn,
-		hpackwrapper.NewWrapper(),
+		hpackEncWrapper,
 		1,
 
 		make(chan writeCmd),
@@ -212,7 +216,7 @@ func (s *Sender) Send(a types.Req) {
 func (s *Sender) send(a types.Req) {
 	// n.Add(1)
 	s.streamID += 2
-	frames := a.SetUp(s.streamID, s.hpackEncWrapper)
+	frames := a.SetUp(s.maxFrameSize, s.streamID, s.hpackEncWrapper)
 
 	stream := s.streamPool.Acquire(s.streamID, a.Tag())
 	stream.SetSize(a.Size())

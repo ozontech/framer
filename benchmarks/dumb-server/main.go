@@ -122,8 +122,6 @@ func newResps() (resp1 []byte, resp1Mod respModifier, resp2 []byte, resp2Mod res
 		resp = append(resp, headerBuf.Bytes()...)
 
 		msgPrefix := make([]byte, 5) // не кодированный ответ 0 длины = любое сообщение со всеми пустыми полями
-		// TODO: remove debug
-		// msgPrefix := []byte{255, 254, 253, 252, 251}
 		dataLen := len(msgPrefix)
 
 		respMod.dataStreamIDindx = len(resp) + 5
@@ -305,8 +303,16 @@ func handleConn(conn net.Conn, i int) (err error) {
 	processor := reciever.NewProcessor([]reciever.FrameTypeProcessor{
 		http2.FrameData:         endStreamProcessor,
 		http2.FrameHeaders:      endStreamProcessor,
-		http2.FrameContinuation: endStreamProcessor,
 		http2.FramePing:         &pingProcessor{cmds},
+		http2.FrameContinuation: endStreamProcessor,
+
+		http2.FrameRSTStream:    noopFrameProcessor{},
+		http2.FrameGoAway:       noopFrameProcessor{},
+		http2.FrameWindowUpdate: noopFrameProcessor{},
+
+		// http.FramePriority not supported
+		http2.FrameSettings: settingsProcessor{},
+		// http.FramePushPromise not supported
 	})
 	g.Go(func() error {
 		defer println("processor done")
@@ -369,7 +375,6 @@ func handleConn(conn net.Conn, i int) (err error) {
 }
 
 func writeLoop(ctx context.Context, conn io.Writer, commands <-chan *command, _ types.FlowControl, _ int) (err error) {
-	f := http2.NewFramer(conn, nil)
 	r1Original, r1mod, r2Original, r2mod := newResps()
 	select {
 	case cmd := <-commands:
@@ -381,7 +386,7 @@ func writeLoop(ctx context.Context, conn io.Writer, commands <-chan *command, _ 
 				return err
 			}
 		case commandTypePing:
-			err := f.WritePing(true, cmd.pingPayload)
+			err := http2.NewFramer(conn, nil).WritePing(true, cmd.pingPayload)
 			if err != nil {
 				return err
 			}
@@ -393,8 +398,9 @@ func writeLoop(ctx context.Context, conn io.Writer, commands <-chan *command, _ 
 	const limit = 1024
 
 	type t struct {
-		bufSrc   [limit][]byte
-		requests [limit][]byte
+		bufSrc    [limit][]byte
+		requests  [limit][]byte
+		pingFrame []byte
 	}
 
 	var t1, t2 t
@@ -403,15 +409,22 @@ func writeLoop(ctx context.Context, conn io.Writer, commands <-chan *command, _ 
 		t2.requests[i] = bytes.Clone(r2Original)
 	}
 
-	writeChan := make(chan net.Buffers, 1)
+	{
+		pingFrame := make([]byte, 9+8)
+		pingHeader := frameheader.FrameHeader(pingFrame)
+		pingHeader.SetType(http2.FramePing)
+		pingHeader.SetLength(8)
+		pingHeader.SetFlags(http2.FlagPingAck)
+
+		t1.pingFrame = pingFrame
+		t2.pingFrame = bytes.Clone(pingFrame)
+	}
+
+	writeChan := make(chan net.Buffers) // важно чтобы канал был небуферизованный!
 	go func() {
 		ticker := time.NewTicker(time.Millisecond)
 		defer close(writeChan)
 		defer ticker.Stop()
-		pingFrame := make([]byte, 9+8)
-		pingHeader := frameheader.FrameHeader(pingFrame)
-		pingHeader.SetType(http2.FramePing)
-		pingHeader.SetFlags(http2.FlagPingAck)
 
 		nextT, t := &t1, &t2
 		for {
@@ -430,16 +443,16 @@ func writeLoop(ctx context.Context, conn io.Writer, commands <-chan *command, _ 
 						scheduledBytesOUT.Add(uint64(len(r2)))
 
 						if len(buf) == limit {
-							writeBuf = buf[1:] // не пишем резервную позицию
+							writeBuf = buf[1:] // НЕ пишем резервную позицию
 						}
 					case commandTypePing:
-						copy(pingFrame[9:], cmd.pingPayload[:])
-						buf[0] = pingFrame
-						writeBuf = buf
+						copy(t.pingFrame[9:], cmd.pingPayload[:])
+						buf[0] = t.pingFrame
+						writeBuf = buf // пишем резервную позицию
 					}
 					commandsPool.Release(cmd)
 				case <-ticker.C:
-					writeBuf = buf[1:] // не пишем резервную позицию
+					writeBuf = buf[1:] // НЕ пишем резервную позицию
 				case <-ctx.Done():
 					return
 				}
@@ -463,7 +476,7 @@ func writeLoop(ctx context.Context, conn io.Writer, commands <-chan *command, _ 
 		cmdsAfter := len(commands)
 
 		since := time.Since(writeStart)
-		if since > time.Millisecond*10 {
+		if since > time.Millisecond*10 && false {
 			println(since.String(), cmdsBefore, cmdsAfter)
 		}
 		bytesOUT.Add(l * uint64(len(r2Original)))
@@ -503,18 +516,16 @@ func configureConn(conn io.ReadWriter, buf []byte) (settings, error) {
 		return s, fmt.Errorf("first frame from other end is not settings, got %T", frame)
 	}
 
-	if !sf.IsAck() {
-		if val, ok := sf.Value(http2.SettingInitialWindowSize); ok {
-			s.InitialWindowSize = val
-		}
-		if val, ok := sf.Value(http2.SettingMaxConcurrentStreams); ok {
-			s.MaxConcurrentStreams = val
-		}
+	if val, ok := sf.Value(http2.SettingInitialWindowSize); ok {
+		s.InitialWindowSize = val
+	}
+	if val, ok := sf.Value(http2.SettingMaxConcurrentStreams); ok {
+		s.MaxConcurrentStreams = val
+	}
 
-		err = framer.WriteSettingsAck()
-		if err != nil {
-			return s, fmt.Errorf("writing settings ack: %w", err)
-		}
+	err = framer.WriteSettingsAck()
+	if err != nil {
+		return s, fmt.Errorf("writing settings ack: %w", err)
 	}
 
 	// у h2load на валидное значение происходит переполнение буффера с отвалом соедиенинения, поэтому: - 65_535
@@ -525,6 +536,16 @@ func configureConn(conn io.ReadWriter, buf []byte) (settings, error) {
 	}
 
 	return s, nil
+}
+
+type noopFrameProcessor struct{}
+
+func (p noopFrameProcessor) Process(
+	_ frameheader.FrameHeader,
+	_ []byte,
+	incomplete bool,
+) error {
+	return nil
 }
 
 type endStreamProcessor struct {
@@ -557,11 +578,11 @@ type pingProcessor struct {
 }
 
 func (p *pingProcessor) Process(
-	_ frameheader.FrameHeader,
+	header frameheader.FrameHeader,
 	payload []byte,
 	incomplete bool,
 ) error {
-	if incomplete {
+	if incomplete || !header.Flags().Has(http2.FlagPingAck) {
 		return nil
 	}
 
@@ -573,5 +594,22 @@ func (p *pingProcessor) Process(
 	copy(c.pingPayload[:], payload)
 	p.respChan <- c
 
+	return nil
+}
+
+type settingsProcessor struct{}
+
+func (p settingsProcessor) Process(
+	header frameheader.FrameHeader,
+	payload []byte,
+	incomplete bool,
+) error {
+	if incomplete {
+		return nil
+	}
+
+	if !header.Flags().Has(http2.FlagSettingsAck) {
+		return errors.New("update settings in runtime not supported")
+	}
 	return nil
 }

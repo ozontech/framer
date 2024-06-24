@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ozontech/framer/consts"
 	"github.com/ozontech/framer/datasource"
 	"github.com/ozontech/framer/loader"
 	"github.com/ozontech/framer/report/simple"
@@ -52,7 +53,7 @@ func BenchmarkE2E(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conn, err := createConn(ctx, 5*time.Second, "localhost:9090")
+	conn, err := createConn(ctx, consts.DefaultTimeout, "localhost:9090")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -61,14 +62,11 @@ func BenchmarkE2E(b *testing.B) {
 	go func() { a.NoError(reporter.Run()) }()
 	defer func() { a.NoError(reporter.Close()) }()
 
-	conf := loader.DefaultConfig()
-	conf.StreamsLimit = 16
 	l, err := loader.NewLoader(
-		ctx,
 		conn,
 		reporter,
+		consts.DefaultTimeout,
 		zaptest.NewLogger(b),
-		loader.DefaultConfig(),
 	)
 	if err != nil {
 		b.Fatal(fmt.Errorf("loader setup: %w", err))
@@ -127,14 +125,11 @@ func BenchmarkE2EInMemDatasource(b *testing.B) {
 	reportErr := make(chan error)
 	go func() { reportErr <- reporter.Run() }()
 
-	conf := loader.DefaultConfig()
-	conf.StreamsLimit = 16
 	l, err := loader.NewLoader(
-		ctx,
 		conn,
 		reporter,
+		consts.DefaultTimeout,
 		zaptest.NewLogger(b),
-		loader.DefaultConfig(),
 	)
 	a.NoError(err)
 

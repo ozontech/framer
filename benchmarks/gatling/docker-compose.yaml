@@ -1,0 +1,19 @@
+name: gatling-benchmark
+include:
+ - ../dumb-server/docker-compose.yaml
+services:
+  gatling:
+    container_name: gatling
+    image: gatling
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    network_mode: host
+    working_dir: /app
+    volumes:
+       - ./:/app
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G

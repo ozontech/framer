@@ -1,0 +1,19 @@
+name: k6-benchmark
+include:
+ - ../dumb-server/docker-compose.yaml
+services:
+  k6:
+    container_name: k6
+    image: grafana/k6:0.51.0
+    network_mode: host
+    volumes:
+       - ./script.js:/app/k6/script.js
+       - ../dumb-server/api/api.proto:/app/dumb-server/api/api.proto
+    working_dir: /app
+    command: >
+      run /app/k6/script.js
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G

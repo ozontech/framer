@@ -11,9 +11,12 @@ type Wrapper struct {
 	enc *hpack.Encoder
 }
 
-func NewWrapper() *Wrapper {
+func NewWrapper(opts ...Opt) *Wrapper {
 	wrapper := &Wrapper{}
 	wrapper.enc = hpack.NewEncoder(wrapper)
+	for _, o := range opts {
+		o.apply(wrapper)
+	}
 	return wrapper
 }
 
@@ -23,4 +26,14 @@ func (ww *Wrapper) WriteField(k, v string) error {
 		Name:  k,
 		Value: v,
 	})
+}
+
+type Opt interface {
+	apply(*Wrapper)
+}
+
+type WithMaxDynamicTableSize uint32
+
+func (s WithMaxDynamicTableSize) apply(w *Wrapper) {
+	w.enc.SetMaxDynamicTableSize(uint32(s))
 }

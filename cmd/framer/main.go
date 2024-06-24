@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	_ "net/http/pprof" //nolint:gosec
+	"runtime/debug"
 
 	"github.com/alecthomas/kong"
 	mangokong "github.com/alecthomas/mango-kong"
@@ -19,14 +20,12 @@ var CLI struct {
 	DebugServer bool              `help:"Enable debug server."`
 }
 
-var Version = "unknown"
-
 type VersionFlag string
 
 func (v VersionFlag) Decode(ctx *kong.DecodeContext) error { return nil }
 func (v VersionFlag) IsBool() bool                         { return true }
 func (v VersionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
-	fmt.Println(Version)
+	fmt.Println(getVersion())
 	app.Exit(0)
 	return nil
 }
@@ -65,4 +64,30 @@ The framer is used to generate test requests to grpc servers and measure codes a
 	)
 	err := kongCtx.Run()
 	kongCtx.FatalIfErrorf(err)
+}
+
+const unknownVersion = "unknown"
+
+var Version = unknownVersion
+
+func getVersion() string {
+	if Version != unknownVersion {
+		return Version
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return Version
+	}
+
+	for _, kv := range info.Settings {
+		if kv.Value == "" {
+			continue
+		}
+		if kv.Key == "vcs.revision" && kv.Value != "" {
+			return kv.Value
+		}
+	}
+
+	return Version
 }

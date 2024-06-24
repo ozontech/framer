@@ -9,6 +9,7 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 
+	"github.com/ozontech/framer/consts"
 	"github.com/ozontech/framer/formats/model"
 	hpackwrapper "github.com/ozontech/framer/utils/hpack_wrapper"
 )
@@ -76,7 +77,7 @@ func TestRequest1(t *testing.T) {
 
 		hpw := hpackwrapper.NewWrapper()
 		const streamID uint32 = 123
-		frames := r.SetUp(streamID, hpw)
+		frames := r.SetUp(consts.DefaultMaxFrameSize, streamID, hpw)
 		a.Len(frames, 2)
 		for _, f := range frames {
 			for _, c := range f.Chunks {

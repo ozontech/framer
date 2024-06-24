@@ -1,9 +1,10 @@
-# framer
-framer is the most performant grpc load generator
+# ozon-framer
+ozon-framer is the most performant grpc load generator
 
 ## Performance
 ![benchmark chart](./assets/benchmark_chart.png)
 
+Benchmarks are done with `11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz`.
 Load generators was limited in 2 CPU.
 Load generators configurations are available in [benchmarks directory](./benchmarks)
 
@@ -17,7 +18,7 @@ Load generators configurations are available in [benchmarks directory](./benchma
 This is alpha version. Public api and request file format may be changed.
 
 ## Install
-Download binary from [github release page](./releases/latest) and place it in your PATH.
+Download binary from [github release page](https://github.com/ozontech/framer/releases/latest) and place it in your PATH.
 
 ### Compile
 **Build using go**
@@ -77,6 +78,13 @@ framer load --addr=localhost:9090 --requests-file=test_files/requests --clients 
 It makes 10 rps from 10 clients in 10 second.
 
 ## Converter
+`framer convert` command may be used to convert requests file between different formats.
+Now is supported next formats:
+* ozon.binary - [see format description above](#ozon.binary-file-format);
+* pandora.json - grpc json format of pandora load generator. [See documentation](https://yandex.cloud/ru/docs/load-testing/concepts/payloads/grpc-json);
+* ozon.json - same as pandora.json, but has ability to store repeatable meta value.
+
+### Supported formats
 ### Ozon.binary file format
 Rules are using [ABNF syntax](https://tools.ietf.org/html/rfc5234).
 
@@ -93,6 +101,9 @@ Body = 1*({any byte})
 ```
 
 [Example requests file](https://github.com/ozontech/framer/-/blob/master/test_files/requests)
+
+#### Programatic ozon.binary generation example
+[Full example](./examples/requestsgen)
 
 ### Usage
 ```
@@ -123,12 +134,10 @@ framer convert --from=ozon.json --to=ozon.binary --reflection-proto=formats/grpc
 ```
 It converts requests file from ozon.json format to ozon.binary format using protofile.
 
-### Programatic requests generation example
-[Full example](./examples/requestsgen)
-
 ## TODO
-- [ ] Installation from homebrew for macOS;
-- [ ] Publish to dockerhub;
+- [ ] Installation
+    - [ ] Homebrew suport for macOS;
+    - [ ] Publish to dockerhub;
 - [ ] Configuration file support;
 - [ ] Requests scheduling strategys combination;
 - [ ] More reporting variants;

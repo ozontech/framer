@@ -1,0 +1,22 @@
+name: framer-benchmark
+include:
+ - ../dumb-server/docker-compose.yaml
+services:
+  framer:
+    container_name: framer
+    image: framer
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    network_mode: host
+    volumes:
+       - ./requests.bin:/tmp/requests.bin
+    command: >
+      load --addr=localhost:9090 --inmem-requests
+      --requests-file=/tmp/requests.bin --clients 10
+      unlimited --duration 1m
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
