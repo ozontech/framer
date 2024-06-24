@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package test.api;
+
+service TestApi {
+    rpc Test (TestRequest) returns (EmptyResponse);
+}
+
+message TestRequest {
+    string field = 1;
+}
+
+message EmptyResponse {}

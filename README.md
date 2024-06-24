@@ -1,3 +1,4 @@
+![logo](./assets/logo.png)
 # ozon-framer
 ozon-framer is the most performant grpc load generator
 
