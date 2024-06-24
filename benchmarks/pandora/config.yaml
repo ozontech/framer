@@ -12,8 +12,9 @@ pools:
       type: discard
     rps:
       - duration: 1m
-        type: unlimited
-    discard_overflow: true
+        ops: 200_000
+        type: const # type unlimited has bug
+    discard_overflow: false
     startup:
       type: once
       # Clients count. Yandex pandora don't use http/2 multiplexing,

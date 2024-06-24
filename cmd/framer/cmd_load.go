@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ozontech/framer/consts"
 	"github.com/ozontech/framer/datasource"
 	"github.com/ozontech/framer/loader"
 	"github.com/ozontech/framer/loader/types"
@@ -131,33 +132,29 @@ func (c *LoadCommand) Run(
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	loaderConfig := loader.DefaultConfig()
-
-	var reporter types.Reporter = supersimpleReporter.New(loaderConfig.Timeout)
+	timeout := consts.DefaultTimeout
+	var reporter types.Reporter = supersimpleReporter.New(timeout)
 	if c.Phout != "" {
 		f, err := os.Create(c.Phout)
 		if err != nil {
 			return fmt.Errorf("creating phout file(%s): %w", c.Phout, err)
 		}
-		phoutReporter := phoutReporter.New(f, loaderConfig.Timeout)
-
+		phoutReporter := phoutReporter.New(f, timeout)
 		reporter = multi.NewMutli(phoutReporter, reporter)
 	}
 	g.Go(reporter.Run)
 
 	loaders := make([]*loader.Loader, clients)
 	for i := 0; i < clients; i++ {
-		conn, err := createConn(ctx, loaderConfig.Timeout, addr)
-		// conn, err := createUnixConn(addr)
+		conn, err := createConn(ctx, timeout, addr)
 		if err != nil {
 			return fmt.Errorf("dialing: %w", err)
 		}
 		l, err := loader.NewLoader(
-			ctx,
 			conn,
 			reporter,
+			timeout,
 			log,
-			loader.DefaultConfig(),
 		)
 		if err != nil {
 			return fmt.Errorf("loader setup: %w", err)

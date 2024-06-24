@@ -1,0 +1,25 @@
+name: ghz-benchmark
+include:
+ - ../dumb-server/docker-compose.yaml
+services:
+  ghz:
+    container_name: ghz
+    image: ghz
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    network_mode: host
+    volumes:
+       - ../dumb-server/api/api.proto:/tmp/api.proto
+       - ./ghz-data.bin:/tmp/ghz-data.bin
+    command: >
+      --insecure --async
+      --proto /tmp/api.proto
+      --call test.api.TestApi/Test
+      -c 10 --total 100000
+      -B /tmp/ghz-data.bin localhost:9090
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G

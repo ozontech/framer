@@ -2,6 +2,7 @@ package reciever
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/ozontech/framer/frameheader"
@@ -9,6 +10,8 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 )
+
+var ErrFrameTypeNotSupported = errors.New("frame type not supported")
 
 type FrameTypeProcessor interface {
 	Process(header frameheader.FrameHeader, payload []byte, incomplete bool) error
@@ -30,9 +33,12 @@ func NewDefaultProcessor(
 ) *Processor {
 	headersFrameProcessor := newHeadersFrameProcessor(streams)
 	return NewProcessor([]FrameTypeProcessor{
-		http2.FrameData:         newDataFrameProcessor(priorityFramesChan, streams),
-		http2.FrameHeaders:      headersFrameProcessor,
-		http2.FrameRSTStream:    newRSTStreamFrameProcessor(streams),
+		http2.FrameData:    newDataFrameProcessor(priorityFramesChan, streams),
+		http2.FrameHeaders: headersFrameProcessor,
+		// http2.FramePriority not supported
+		http2.FrameRSTStream: newRSTStreamFrameProcessor(streams),
+		http2.FrameSettings:  settingsProcessor{},
+		// http2.FramePushPromise not supported
 		http2.FramePing:         newPingFrameProcessor(priorityFramesChan),
 		http2.FrameGoAway:       newGoAwayFrameProcessor(),
 		http2.FrameWindowUpdate: newWindowUpdateFrameProcessor(streams, fcConn),
@@ -70,11 +76,13 @@ func (p *Processor) process(buf []byte) error {
 		// }
 
 		sp := p.subprocessors[header.Type()]
-		if sp != nil {
-			err = sp.Process(header, b, status == StatusPayloadIncomplete)
-			if err != nil {
-				return err
-			}
+		if sp == nil {
+			return fmt.Errorf("%w: %s", ErrFrameTypeNotSupported, header.Type().String())
+		}
+
+		err = sp.Process(header, b, status == StatusPayloadIncomplete)
+		if err != nil {
+			return err
 		}
 
 		if status == StatusFrameDone {
@@ -174,12 +182,6 @@ func newHeadersFrameProcessor(streams types.StreamStore) *headersFrameProcessor 
 	p.hpackDecoder = hpack.NewDecoder(4096, p.OnHeader)
 	return p
 }
-
-// func printAllocs() {
-// 	var m runtime.MemStats
-// 	runtime.ReadMemStats(&m)
-// 	println(m.Mallocs, m.Frees)
-// }
 
 func (p *headersFrameProcessor) OnHeader(f hpack.HeaderField) {
 	p.currentStream.OnHeader(f.Name, f.Value)
@@ -313,4 +315,21 @@ func (p *goAwayFrameProcessor) Process(_ frameheader.FrameHeader, payload []byte
 	p.lastStreamID = 0
 	p.debugData = p.debugData[:0]
 	return err
+}
+
+type settingsProcessor struct{}
+
+func (p settingsProcessor) Process(
+	header frameheader.FrameHeader,
+	payload []byte,
+	incomplete bool,
+) error {
+	if incomplete {
+		return nil
+	}
+
+	if !header.Flags().Has(http2.FlagSettingsAck) {
+		return errors.New("update settings in runtime not supported")
+	}
+	return nil
 }

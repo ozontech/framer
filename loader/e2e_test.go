@@ -10,6 +10,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ozontech/framer/consts"
 	"github.com/ozontech/framer/datasource"
 	"github.com/ozontech/framer/loader/types"
 	"github.com/stretchr/testify/assert"
@@ -26,7 +27,10 @@ func TestE2E(t *testing.T) {
 	log := zaptest.NewLogger(t)
 	a := assert.New(t)
 	clientConn, serverConn := net.Pipe()
-	l := newLoader(clientConn, nooReporter{}, log, DefaultConfig())
+	l := newLoader(
+		clientConn, nooReporter{},
+		loaderConfig{timeout: consts.DefaultTimeout}, log,
+	)
 
 	requestsFile, err := os.Open("../test_files/requests")
 	if err != nil {

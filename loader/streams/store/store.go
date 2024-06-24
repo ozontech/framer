@@ -95,7 +95,7 @@ type ShardedStreamsMap struct {
 
 func NewShardedStreamsMap(size uint32, build func() types.StreamStore) *ShardedStreamsMap {
 	shards := make([]types.StreamStore, size*2)
-	for i := 1; i < len(shards); i++ {
+	for i := 1; i < len(shards); i += 2 {
 		shards[i] = build()
 	}
 	return &ShardedStreamsMap{shards, size - 1}
@@ -106,7 +106,8 @@ func (s *ShardedStreamsMap) shard(id uint32) types.StreamStore {
 }
 
 func (s *ShardedStreamsMap) Each(fn func(types.Stream)) {
-	for _, shard := range s.shards {
+	for i := 1; i < len(s.shards); i += 2 {
+		shard := s.shards[i]
 		shard.Each(fn)
 	}
 }

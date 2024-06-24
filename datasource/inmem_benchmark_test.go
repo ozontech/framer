@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/ozontech/framer/consts"
 	"github.com/ozontech/framer/loader/types"
 )
 
@@ -33,7 +34,7 @@ func BenchmarkInmemDataSource(b *testing.B) {
 	}()
 
 	for r := range rr {
-		r.SetUp(0, &noopHpackFieldWriter{})
+		r.SetUp(consts.DefaultMaxFrameSize, 0, &noopHpackFieldWriter{})
 		b.SetBytes(int64(r.Size()))
 		r.Release()
 	}

@@ -1,0 +1,20 @@
+name: pandora-benchmark
+include:
+ - ../dumb-server/docker-compose.yaml
+services:
+  pandora:
+    container_name: pandora
+    image: pandora
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    network_mode: host
+    volumes:
+       - ./:/app/
+    command: >
+      config.yaml
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G

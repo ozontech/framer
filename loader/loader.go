@@ -15,12 +15,14 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ozontech/framer/consts"
 	fc "github.com/ozontech/framer/loader/flowcontrol"
 	"github.com/ozontech/framer/loader/reciever"
 	"github.com/ozontech/framer/loader/sender"
 	streamsPool "github.com/ozontech/framer/loader/streams/pool"
 	streamsStore "github.com/ozontech/framer/loader/streams/store"
 	"github.com/ozontech/framer/loader/types"
+	hpackwrapper "github.com/ozontech/framer/utils/hpack_wrapper"
 )
 
 var clientPreface = []byte(http2.ClientPreface)
@@ -37,8 +39,6 @@ type Loader struct {
 	streamsStore types.StreamStore
 	timeoutQueue TimeoutQueue
 
-	conf Config
-
 	sender   *sender.Sender
 	reciever *reciever.Reciever
 	loaderID int32
@@ -46,61 +46,79 @@ type Loader struct {
 	log *zap.Logger
 }
 
-type Config struct {
-	Timeout      time.Duration // таймаут для запросов
-	StreamsLimit uint32        `config:"max-open-streams" validate:"min=0"`
+func NewLoader(
+	conn net.Conn,
+	reporter types.Reporter,
+	timeout time.Duration,
+	log *zap.Logger,
+) (*Loader, error) {
+	conf := loaderConfig{timeout: timeout}
+
+	err := conn.SetDeadline(time.Now().Add(conf.timeout))
+	if err != nil {
+		return nil, fmt.Errorf("set conn deadline: %w", err)
+	}
+
+	err = setupHTTP2(conn, conn, &conf)
+	if err != nil {
+		return nil, err
+	}
+
+	return newLoader(conn, reporter, conf, log), nil
 }
 
-const defaultTimeout = 11 * time.Second
-
-func DefaultConfig() Config {
-	return Config{
-		Timeout:      defaultTimeout,
-		StreamsLimit: 0,
-	}
+type loaderConfig struct {
+	timeout              time.Duration
+	maxConcurrentStreams uint32
+	initialWindowSize    uint32
+	maxDymanicTableSize  uint32
+	maxFrameSize         uint32
 }
 
 var i int32
 
-func NewLoader(
-	ctx context.Context,
-	conn net.Conn,
-	reporter types.Reporter,
-	log *zap.Logger,
-	conf Config,
-) (*Loader, error) {
-	l := newLoader(conn, reporter, log, conf)
-	setupCtx, setupCancel := context.WithTimeout(ctx, conf.Timeout)
-	defer setupCancel()
-	return l, l.setup(setupCtx)
-}
-
 func newLoader(
 	conn net.Conn,
 	reporter types.LoaderReporter,
+	conf loaderConfig,
 	log *zap.Logger,
-	conf Config,
 ) *Loader {
+	if conf.timeout == 0 {
+		conf.timeout = consts.DefaultTimeout
+	}
 	loaderID := atomic.AddInt32(&i, 1)
 	log = log.Named("loader").With(zap.Int32("loader-id", loaderID))
 	log.Debug("loader created")
 
-	// streamsStore := streamsStore.NewStreamsNoop()
 	streamsStore := streamsStore.NewShardedStreamsMap(16, func() types.StreamStore {
 		return streamsStore.NewStreamsMap()
 	})
-	// streamsStore := NewLimitedStreams(NewStreamsSyncMap(), loaderID, conf.StreamsLimit)
-	// streamsStore := NewLimitedStreams(NewStreamsMap(), loaderID, conf.StreamsLimit)
-	timeoutQueue := NewTimeoutQueue(conf.Timeout)
+	timeoutQueue := NewTimeoutQueue(conf.timeout)
+	fcConn := fc.NewFlowControl(consts.DefaultInitialWindowSize) // для соединения (по спеке игнорирует SETTINGS_INITIAL_WINDOW_SIZE)
 
-	// TODO(pgribanov): math.MaxUint32?
-	fcConn := fc.NewFlowControl(math.MaxUint32) // для соединения (не может меняться в течение жизни соединения)
+	var streamPoolOpts []streamsPool.Opt
+	if conf.maxConcurrentStreams != 0 {
+		streamPoolOpts = append(streamPoolOpts, streamsPool.WithMaxConcurrentStreams(conf.maxConcurrentStreams))
+	}
+	if conf.initialWindowSize != 0 {
+		streamPoolOpts = append(streamPoolOpts, streamsPool.WithInitialWindowSize(conf.initialWindowSize))
+	}
+	streamsPool := streamsPool.NewStreamsPool(reporter, streamPoolOpts...)
+
+	var hpackWrapperOpts []hpackwrapper.Opt
+	if conf.maxDymanicTableSize != 0 {
+		hpackWrapperOpts = append(hpackWrapperOpts, hpackwrapper.WithMaxDynamicTableSize(conf.maxDymanicTableSize))
+	}
+	hpackWrapper := hpackwrapper.NewWrapper(hpackWrapperOpts...)
+
+	maxFrameSize := consts.DefaultMaxFrameSize
+	if conf.maxFrameSize != 0 {
+		maxFrameSize = int(conf.maxFrameSize)
+	}
 
 	priorityFramesCh := make(chan []byte, 1)
-	streamsPool := streamsPool.NewStreamsPool(reporter, 1024, conf.StreamsLimit)
 	return &Loader{
 		conn:         conn,
-		conf:         conf,
 		timeoutQueue: timeoutQueue,
 		log:          log,
 		loaderID:     loaderID,
@@ -108,32 +126,14 @@ func newLoader(
 		streamsStore: streamsStore,
 
 		streamsPool: streamsPool,
-		sender:      sender.NewSender(conn, fcConn, priorityFramesCh, streamsPool, streamsStore),
-		reciever:    reciever.NewReciever(conn, fcConn, priorityFramesCh, streamsStore),
+		sender: sender.NewSender(
+			conn, fcConn, priorityFramesCh, streamsPool,
+			streamsStore, hpackWrapper, maxFrameSize,
+		),
+		reciever: reciever.NewReciever(
+			conn, fcConn, priorityFramesCh, streamsStore,
+		),
 	}
-}
-
-func (l *Loader) setup(ctx context.Context) (err error) {
-	deadline, ok := ctx.Deadline()
-	if ok {
-		err = l.conn.SetDeadline(deadline)
-		if err != nil {
-			return fmt.Errorf("set conn deadline: %w", err)
-		}
-	}
-
-	connConf, err := setupHTTP2(l.conn, l.conn)
-	if err != nil {
-		return err
-	}
-
-	if connConf.InitialWindowSize != 0 {
-		l.streamsPool.SetInitialWindowSize(connConf.InitialWindowSize)
-	}
-	if connConf.MaxConcurrentStreams != 0 {
-		l.streamsPool.SetLimit(connConf.MaxConcurrentStreams)
-	}
-	return nil
 }
 
 func (l *Loader) Shutdown(ctx context.Context) (err error) {
@@ -264,58 +264,59 @@ func (l *Loader) DoRequest(req types.Req) {
 	l.sender.Send(req)
 }
 
-type connConfig struct {
-	InitialWindowSize    uint32
-	MaxConcurrentStreams uint32
-}
-
-func setupHTTP2(r io.Reader, w io.Writer) (connConfig, error) {
-	var conf connConfig
-
+func setupHTTP2(r io.Reader, w io.Writer, conf *loaderConfig) error {
 	// we should not check n, because Write must return error on n < len(clientPreface)
 	_, err := w.Write(clientPreface)
 	if err != nil {
-		return conf, fmt.Errorf("write http2 preface: %w", err)
+		return fmt.Errorf("write http2 preface: %w", err)
 	}
 
 	framer := http2.NewFramer(w, r)
 
 	// handle settings
-	{
-		frame, err := framer.ReadFrame()
-		if err != nil {
-			return conf, fmt.Errorf("read settings frame: %w", err)
-		}
+	frame, err := framer.ReadFrame()
+	if err != nil {
+		return fmt.Errorf("read settings frame: %w", err)
+	}
 
-		sf, ok := frame.(*http2.SettingsFrame)
-		if !ok {
-			return conf, errors.New("protocol error: first frame from server is not settings")
-		}
-		if val, ok := sf.Value(http2.SettingInitialWindowSize); ok {
-			conf.InitialWindowSize = val
-		}
-		if val, ok := sf.Value(http2.SettingMaxConcurrentStreams); ok {
-			conf.MaxConcurrentStreams = val
-		}
+	sf, ok := frame.(*http2.SettingsFrame)
+	if !ok {
+		return errors.New("protocol error: first frame from server is not settings")
+	}
 
-		err = framer.WriteSettings(http2.Setting{
-			ID:  http2.SettingInitialWindowSize,
-			Val: math.MaxUint32 & 0x7fffffff, // mask off high reserved bit
-		})
-		if err != nil {
-			return conf, fmt.Errorf("write settings frame: %w", err)
-		}
-
-		err = framer.WriteSettingsAck()
-		if err != nil {
-			return conf, fmt.Errorf("write settings ack: %w", err)
-		}
-
-		err = framer.WriteWindowUpdate(0, math.MaxUint32&0x7fffffff)
-		if err != nil {
-			return conf, fmt.Errorf("write window update frame: %w", err)
+	for i := 0; i < sf.NumSettings(); i++ {
+		s := sf.Setting(i)
+		switch s.ID {
+		case http2.SettingInitialWindowSize:
+			conf.initialWindowSize = s.Val
+		case http2.SettingMaxConcurrentStreams:
+			conf.maxConcurrentStreams = s.Val
+		case http2.SettingHeaderTableSize:
+			conf.maxDymanicTableSize = s.Val
+		case http2.SettingMaxFrameSize:
+			conf.maxFrameSize = s.Val
+		default:
+			return fmt.Errorf("got not supported setting: %s (%d)", s.ID.String(), s.Val)
 		}
 	}
 
-	return conf, nil
+	err = framer.WriteSettings(http2.Setting{
+		ID:  http2.SettingInitialWindowSize,
+		Val: math.MaxUint32 & 0x7fffffff, // mask off high reserved bit
+	})
+	if err != nil {
+		return fmt.Errorf("write settings frame: %w", err)
+	}
+
+	err = framer.WriteSettingsAck()
+	if err != nil {
+		return fmt.Errorf("write settings ack: %w", err)
+	}
+
+	err = framer.WriteWindowUpdate(0, math.MaxUint32&0x7fffffff)
+	if err != nil {
+		return fmt.Errorf("write window update frame: %w", err)
+	}
+
+	return nil
 }

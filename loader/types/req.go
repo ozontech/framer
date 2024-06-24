@@ -8,7 +8,7 @@ type HPackFieldWriter interface {
 }
 
 type Req interface {
-	SetUp(streamID uint32, fieldWriter HPackFieldWriter) []Frame
+	SetUp(maxFramePayloadLen int, streamID uint32, fieldWriter HPackFieldWriter) []Frame
 	Tag() string
 	Size() int
 	Releaser

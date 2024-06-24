@@ -1,0 +1,24 @@
+name: h2load-benchmark
+include:
+ - ../dumb-server/docker-compose.yaml
+services:
+ h2load:
+    container_name: h2load
+    image: h2load
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    network_mode: host
+    volumes:
+       - ./data:/tmp/data
+    command: >
+      http://localhost:9090/test.api.TestService/Test
+      -n 6000000 -c 10 -m 200
+      --data=/tmp/data
+      -H 'x-my-header-key1: my-header-val1' -H 'x-my-header-key2: my-header-val2'
+      -H 'te: trailers' -H 'content-type: application/grpc'
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G

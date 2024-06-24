@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  server:
+    container_name: server-${COMPOSE_PROJECT_NAME}
+    image: server
+    build:
+      context: ../..
+      dockerfile: benchmarks/dumb-server/Dockerfile
+    network_mode: host

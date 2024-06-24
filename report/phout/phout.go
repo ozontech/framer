@@ -141,7 +141,7 @@ func (s *streamState) result() []byte {
 	s.reportLine = strconv.AppendInt(s.reportLine, rtt, 10)
 	s.reportLine = append(s.reportLine, tabChar)
 
-	// keyConnectMicro // TODO (skipor): set all for HTTP using httptrace and helper structs
+	// keyConnectMicro
 	s.reportLine = append(s.reportLine, '0', tabChar)
 	// keySendMicro
 	s.reportLine = append(s.reportLine, '0', tabChar)
@@ -149,7 +149,7 @@ func (s *streamState) result() []byte {
 	s.reportLine = append(s.reportLine, '0', tabChar)
 	// keyReceiveMicro
 	s.reportLine = append(s.reportLine, '0', tabChar)
-	// keyIntervalEventMicro // TODO: understand WTF is that mean and set it right.
+	// keyIntervalEventMicro
 	s.reportLine = append(s.reportLine, '0', tabChar)
 	// keyRequestBytes
 	s.reportLine = strconv.AppendInt(s.reportLine, int64(s.reqSize), 10)

@@ -8,7 +8,7 @@ import (
 )
 
 func BenchmarkStreamsPool(b *testing.B) {
-	p := pool.NewStreamsPool(noop.New(), 1024, 0)
+	p := pool.NewStreamsPool(noop.New())
 	for i := 0; i < b.N; i++ {
 		s := p.Acquire(0, "")
 		s.End()

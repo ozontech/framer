@@ -41,31 +41,6 @@ func NewRequestAdapterFactory(ops ...Option) *RequestAdapterFactory {
 	return f
 }
 
-type additionalHeadersOpts []string
-
-func (h additionalHeadersOpts) apply(f *RequestAdapterFactory) {
-	for i := 0; i < len(h); i += 2 {
-		k, v := h[i], h[i+1]
-		if strings.HasPrefix(k, ":") {
-			f.staticPseudoHeaders = append(f.staticPseudoHeaders, k, v)
-		} else {
-			f.staticRegularHeaders = append(f.staticRegularHeaders, k, v)
-		}
-	}
-}
-
-func WithAdditionalHeader(k, v string) Option {
-	return additionalHeadersOpts([]string{k, v})
-}
-
-func WithAdditionalHeaders(headers []string) Option {
-	return additionalHeadersOpts(headers)
-}
-
-func WithTimeout(t time.Duration) Option {
-	return additionalHeadersOpts([]string{"grpc-timeout", grpcutil.EncodeDuration(t)})
-}
-
 func (f *RequestAdapterFactory) Build() *RequestAdapter {
 	return NewRequestAdapter(
 		f.isAllowedMeta,
@@ -142,8 +117,6 @@ func (a *RequestAdapter) setData(data model.Data) { a.data = data }
 func (a *RequestAdapter) FullMethodName() string  { return unsafeString(a.data.Method) }
 func (a *RequestAdapter) Tag() string             { return unsafeString(a.data.Tag) }
 
-const maxFramePayloadLen int = 16384 // Максимальная длина пейлоада фрейма в grpc. У http2 ограничение больше.
-
 // TODO(pgribanov): после реализации собственной системы энкодинга хедеров,
 // отказаться от unsafe
 func unsafeString(b []byte) string {
@@ -152,6 +125,7 @@ func unsafeString(b []byte) string {
 }
 
 func (a *RequestAdapter) setUpHeaders(
+	maxFramePayloadLen int,
 	streamID uint32,
 	hpack types.HPackFieldWriter,
 ) {
@@ -219,6 +193,7 @@ func (a *RequestAdapter) setUpHeaders(
 }
 
 func (a *RequestAdapter) setUpPayload(
+	maxFramePayloadLen int,
 	streamID uint32,
 ) {
 	data := a.data
@@ -293,6 +268,7 @@ func (a *RequestAdapter) Size() int {
 }
 
 func (a *RequestAdapter) SetUp(
+	maxFramePayloadLen int,
 	streamID uint32,
 	hpackFieldWriter types.HPackFieldWriter,
 ) []types.Frame {
@@ -301,8 +277,33 @@ func (a *RequestAdapter) SetUp(
 
 	a.frames = a.frames[:0]
 
-	a.setUpHeaders(streamID, hpackFieldWriter)
-	a.setUpPayload(streamID)
+	a.setUpHeaders(maxFramePayloadLen, streamID, hpackFieldWriter)
+	a.setUpPayload(maxFramePayloadLen, streamID)
 
 	return a.frames
+}
+
+func WithAdditionalHeader(k, v string) Option {
+	return additionalHeadersOpts([]string{k, v})
+}
+
+func WithAdditionalHeaders(headers []string) Option {
+	return additionalHeadersOpts(headers)
+}
+
+func WithTimeout(t time.Duration) Option {
+	return additionalHeadersOpts([]string{"grpc-timeout", grpcutil.EncodeDuration(t)})
+}
+
+type additionalHeadersOpts []string
+
+func (h additionalHeadersOpts) apply(f *RequestAdapterFactory) {
+	for i := 0; i < len(h); i += 2 {
+		k, v := h[i], h[i+1]
+		if strings.HasPrefix(k, ":") {
+			f.staticPseudoHeaders = append(f.staticPseudoHeaders, k, v)
+		} else {
+			f.staticRegularHeaders = append(f.staticRegularHeaders, k, v)
+		}
+	}
 }

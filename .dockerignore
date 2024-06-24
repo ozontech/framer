@@ -1,5 +1,6 @@
 .git
 LICENSE
+docker-compose.yaml
 *.md
 assets
 Dockerfile
