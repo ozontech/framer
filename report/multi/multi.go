@@ -37,19 +37,31 @@ func (m *Multi) Close() error {
 	return g.Wait()
 }
 
-func (m *Multi) Acquire(tag string) types.StreamState {
+func (m *Multi) Acquire(tag string, streamID uint32) types.StreamState {
 	ms, ok := m.pool.Acquire()
 	if !ok {
 		ms = make(multiState, len(m.nested))
 	}
 
 	for i, r := range m.nested {
-		ms[i] = r.Acquire(tag)
+		ms[i] = r.Acquire(tag, streamID)
 	}
 	return ms
 }
 
 type multiState []types.StreamState
+
+func (s multiState) FirstByteSent() {
+	for _, s := range s {
+		s.FirstByteSent()
+	}
+}
+
+func (s multiState) LastByteSent() {
+	for _, s := range s {
+		s.FirstByteSent()
+	}
+}
 
 func (s multiState) SetSize(n int) {
 	for _, s := range s {
@@ -69,15 +81,27 @@ func (s multiState) RSTStream(code http2.ErrCode) {
 	}
 }
 
+func (s multiState) RequestError(err error) {
+	for _, s := range s {
+		s.RequestError(err)
+	}
+}
+
 func (s multiState) IoError(err error) {
 	for _, s := range s {
 		s.IoError(err)
 	}
 }
 
-func (s multiState) GoAway(errCode http2.ErrCode) {
+func (s multiState) GoAway(errCode http2.ErrCode, debugData []byte) {
 	for _, s := range s {
-		s.GoAway(errCode)
+		s.GoAway(errCode, debugData)
+	}
+}
+
+func (s multiState) Timeout() {
+	for _, s := range s {
+		s.Timeout()
 	}
 }
 

@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"math"
 	"sync"
 
 	"github.com/ozontech/framer/consts"
@@ -15,18 +14,16 @@ type StreamsPool struct {
 	cond *sync.Cond
 	pool []*streamImpl
 
-	inUse                uint32
-	maxConcurrentStreams uint32
-	initialWindowSize    uint32
+	inUse             uint32
+	initialWindowSize uint32
 }
 
 func NewStreamsPool(reporter types.LoaderReporter, opts ...Opt) *StreamsPool {
 	p := &StreamsPool{
-		reporter:             reporter,
-		cond:                 sync.NewCond(&sync.Mutex{}),
-		pool:                 make([]*streamImpl, 0, 1024),
-		maxConcurrentStreams: math.MaxUint32,
-		initialWindowSize:    consts.DefaultInitialWindowSize,
+		reporter:          reporter,
+		cond:              sync.NewCond(&sync.Mutex{}),
+		pool:              make([]*streamImpl, 0, 1024),
+		initialWindowSize: consts.DefaultInitialWindowSize,
 	}
 	for _, o := range opts {
 		o.apply(p)
@@ -37,10 +34,6 @@ func NewStreamsPool(reporter types.LoaderReporter, opts ...Opt) *StreamsPool {
 func (p *StreamsPool) Acquire(streamID uint32, tag string) types.Stream {
 	var stream *streamImpl
 	p.cond.L.Lock()
-	if p.inUse >= p.maxConcurrentStreams {
-		p.cond.Wait()
-	}
-
 	p.inUse++
 	l := len(p.pool)
 	if l > 0 {
@@ -55,7 +48,7 @@ func (p *StreamsPool) Acquire(streamID uint32, tag string) types.Stream {
 
 	stream.streamID = streamID
 	stream.fc.Reset(p.initialWindowSize)
-	stream.StreamState = p.reporter.Acquire(tag)
+	stream.StreamState = p.reporter.Acquire(tag, streamID)
 
 	return stream
 }
@@ -108,12 +101,6 @@ func (s *streamImpl) End() {
 
 type Opt interface {
 	apply(*StreamsPool)
-}
-
-type WithMaxConcurrentStreams uint32
-
-func (s WithMaxConcurrentStreams) apply(p *StreamsPool) {
-	p.maxConcurrentStreams = uint32(s)
 }
 
 type WithInitialWindowSize uint32

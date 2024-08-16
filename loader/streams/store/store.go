@@ -45,9 +45,9 @@ type StreamsMap struct {
 	mu *sync.RWMutex
 }
 
-func NewStreamsMap() *StreamsMap {
+func NewStreamsMap(size int) *StreamsMap {
 	return &StreamsMap{
-		m:  NewStreamsMapUnlocked(1024),
+		m:  NewStreamsMapUnlocked(size),
 		mu: &sync.RWMutex{},
 	}
 }

@@ -132,18 +132,18 @@ func (c *LoadCommand) Run(
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	timeout := consts.DefaultTimeout
-	var reporter types.Reporter = supersimpleReporter.New(timeout)
+	var reporter types.Reporter = supersimpleReporter.New()
 	if c.Phout != "" {
 		f, err := os.Create(c.Phout)
 		if err != nil {
 			return fmt.Errorf("creating phout file(%s): %w", c.Phout, err)
 		}
-		phoutReporter := phoutReporter.New(f, timeout)
+		phoutReporter := phoutReporter.New(f)
 		reporter = multi.NewMutli(phoutReporter, reporter)
 	}
 	g.Go(reporter.Run)
 
+	timeout := consts.DefaultTimeout
 	loaders := make([]*loader.Loader, clients)
 	for i := 0; i < clients; i++ {
 		conn, err := createConn(ctx, timeout, addr)
@@ -154,6 +154,7 @@ func (c *LoadCommand) Run(
 			conn,
 			reporter,
 			timeout,
+			false,
 			log,
 		)
 		if err != nil {

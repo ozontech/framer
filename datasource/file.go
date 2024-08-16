@@ -5,6 +5,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/ozontech/framer/datasource/decoder"
 	"github.com/ozontech/framer/formats/grpc/ozon/binary"
 	"github.com/ozontech/framer/formats/model"
 	"github.com/ozontech/framer/loader/types"
@@ -12,7 +13,9 @@ import (
 )
 
 type FileDataSource struct {
-	format  *model.InputFormat
+	reader  model.PooledRequestReader
+	decoder *decoder.Decoder
+
 	pool    *pool.SlicePool[*fileRequest]
 	factory *RequestAdapterFactory
 	mu      sync.Mutex
@@ -20,7 +23,9 @@ type FileDataSource struct {
 
 func NewFileDataSource(r io.Reader, factoryOptions ...Option) *FileDataSource {
 	ds := &FileDataSource{
-		binary.NewInput(r),
+		binary.NewInput(r).Reader,
+		decoder.NewDecoder(),
+
 		pool.NewSlicePoolSize[*fileRequest](100),
 		NewRequestAdapterFactory(factoryOptions...),
 		sync.Mutex{},
@@ -32,7 +37,7 @@ func (ds *FileDataSource) Fetch() (types.Req, error) {
 	r, ok := ds.pool.Acquire()
 	if !ok {
 		r = &fileRequest{
-			bytesPool:      ds.format.Reader,
+			bytesPool:      ds.reader,
 			pool:           ds.pool,
 			RequestAdapter: ds.factory.Build(),
 		}
@@ -40,17 +45,17 @@ func (ds *FileDataSource) Fetch() (types.Req, error) {
 
 	var err error
 	ds.mu.Lock()
-	r.bytes, err = ds.format.Reader.ReadNext()
+	r.bytes, err = ds.reader.ReadNext()
 	ds.mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("read next request: %w", err)
 	}
 
-	return r, ds.format.Decoder.Unmarshal(&r.data, r.bytes)
+	return r, ds.decoder.Unmarshal(&r.data, r.bytes)
 }
 
 type fileRequest struct {
-	bytesPool model.PooledRequestReder
+	bytesPool model.PooledRequestReader
 	bytes     []byte
 	pool      *pool.SlicePool[*fileRequest]
 	*RequestAdapter

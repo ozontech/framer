@@ -131,14 +131,14 @@ func TestDataFrameProcessor(t *testing.T) {
 
 	// do nothing on incomplete
 	{
-		fp := newDataFrameProcessor(nil, nil)
+		fp := newDataFrameProcessor(nil, nil, nil)
 		a.NoError(fp.Process(frameheader.FrameHeader{}, nil, true))
 	}
 
 	// publish window update frame on acummulating more than trigger length
 	{
 		priorityFramesChan := make(chan []byte, 1)
-		fp := newDataFrameProcessor(priorityFramesChan, nil)
+		fp := newDataFrameProcessor(priorityFramesChan, nil, nil)
 		fh := frameheader.NewFrameHeader()
 		const streamID uint32 = 123
 		fh.SetStreamID(streamID)
@@ -171,7 +171,7 @@ func TestDataFrameProcessor(t *testing.T) {
 		}
 	}
 
-	// do nothing on incomplete
+	// release stream on end flag
 	{
 		const streamID uint32 = 184921
 		stream := &StreamMock{
@@ -183,7 +183,10 @@ func TestDataFrameProcessor(t *testing.T) {
 				return stream
 			},
 		}
-		fp := newDataFrameProcessor(nil, streams)
+		streamsLimiter := &StreamsLimiterMock{
+			ReleaseFunc: func() {},
+		}
+		fp := newDataFrameProcessor(nil, streams, streamsLimiter)
 		fh := frameheader.NewFrameHeader()
 		fh.SetStreamID(streamID)
 		fh.SetFlags(http2.FlagDataEndStream)
@@ -209,6 +212,8 @@ func TestHeadersFrameProcessor(t *testing.T) {
 				a.Equal(streamID, s)
 				return stream
 			},
+		}, &StreamsLimiterMock{
+			ReleaseFunc: func() {},
 		})
 
 		b := bytes.NewBuffer(nil)
@@ -248,6 +253,8 @@ func TestHeadersFrameProcessor(t *testing.T) {
 				return stream
 			},
 			DeleteFunc: func(s uint32) { a.Equal(streamID, s) },
+		}, &StreamsLimiterMock{
+			ReleaseFunc: func() {},
 		})
 
 		fh := frameheader.NewFrameHeader()
@@ -277,7 +284,9 @@ func TestRSTStreamFrameProcessor(t *testing.T) {
 			return stream
 		},
 	}
-	fp := newRSTStreamFrameProcessor(streams)
+	fp := newRSTStreamFrameProcessor(streams, &StreamsLimiterMock{
+		ReleaseFunc: func() {},
+	})
 
 	framer := newFramer()
 	a.NoError(framer.WriteRSTStream(streamID, errCode))

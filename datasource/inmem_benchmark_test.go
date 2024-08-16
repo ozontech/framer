@@ -34,7 +34,7 @@ func BenchmarkInmemDataSource(b *testing.B) {
 	}()
 
 	for r := range rr {
-		r.SetUp(consts.DefaultMaxFrameSize, 0, &noopHpackFieldWriter{})
+		r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, &noopHpackFieldWriter{})
 		b.SetBytes(int64(r.Size()))
 		r.Release()
 	}

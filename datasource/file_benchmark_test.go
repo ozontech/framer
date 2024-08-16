@@ -12,8 +12,8 @@ import (
 
 type noopHpackFieldWriter struct{}
 
-func (*noopHpackFieldWriter) WriteField(string, string) error { return nil }
-func (*noopHpackFieldWriter) SetWriter(io.Writer)             {}
+func (*noopHpackFieldWriter) WriteField(string, string) {}
+func (*noopHpackFieldWriter) SetWriter(io.Writer)       {}
 
 func BenchmarkFileDataSource(b *testing.B) {
 	f, err := os.Open("../test_files/requests")
@@ -28,7 +28,7 @@ func BenchmarkFileDataSource(b *testing.B) {
 	go func() {
 		defer close(done)
 		for r := range rr {
-			r.SetUp(consts.DefaultMaxFrameSize, 0, &noopHpackFieldWriter{})
+			r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, &noopHpackFieldWriter{})
 			b.SetBytes(int64(r.Size()))
 			r.Release()
 		}
@@ -61,7 +61,7 @@ func BenchmarkRequestSetupNoop(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.SetUp(consts.DefaultMaxFrameSize, 0, &noopHpackFieldWriter{})
+		r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, &noopHpackFieldWriter{})
 		b.SetBytes(int64(r.Size()))
 	}
 }
@@ -82,7 +82,7 @@ func BenchmarkRequestSetupHpack(b *testing.B) {
 	hpackwrapper := hpackwrapper.NewWrapper()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.SetUp(consts.DefaultMaxFrameSize, 0, hpackwrapper)
+		r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, hpackwrapper)
 		b.SetBytes(int64(r.Size()))
 	}
 }

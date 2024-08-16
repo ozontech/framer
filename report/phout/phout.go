@@ -21,16 +21,14 @@ type Reporter struct {
 	w       *bufio.Writer
 	ch      chan *streamState
 	pool    *pool.SlicePool[*streamState]
-	timeout time.Duration
 }
 
-func New(w io.Writer, timeout time.Duration) *Reporter {
+func New(w io.Writer) *Reporter {
 	return &Reporter{
 		make(chan struct{}),
 		bufio.NewWriter(w),
 		make(chan *streamState, 256),
 		pool.NewSlicePoolSize[*streamState](256),
-		timeout,
 	}
 }
 
@@ -50,13 +48,12 @@ func (r *Reporter) Close() error {
 	return nil
 }
 
-func (r *Reporter) Acquire(tag string) types.StreamState {
+func (r *Reporter) Acquire(tag string, streamID uint32) types.StreamState {
 	ss, ok := r.pool.Acquire()
 	if !ok {
 		ss = &streamState{
 			reportLine: make([]byte, 128),
 			reporter:   r,
-			timeout:    r.timeout,
 		}
 	}
 	ss.reset(tag)
@@ -71,14 +68,15 @@ type streamState struct {
 	reportLine []byte
 
 	reporter *Reporter
-	timeout  time.Duration
 
 	grpcCodeHeader  string
 	http2CodeHeader string
 
+	requestError  error
 	ioErr         error
 	rstStreamCode *http2.ErrCode
 	goAwayCode    *http2.ErrCode
+	timeouted     bool
 
 	reqSize   int
 	startTime time.Time
@@ -92,12 +90,17 @@ func (s *streamState) reset(tag string) {
 
 	s.grpcCodeHeader = ""
 	s.http2CodeHeader = ""
+	s.timeouted = false
 
+	s.requestError = nil
 	s.ioErr = nil
 	s.goAwayCode = nil
 	s.rstStreamCode = nil
 	s.reqSize = 0
 }
+
+func (s *streamState) FirstByteSent() {}
+func (s *streamState) LastByteSent()  {}
 
 func (s *streamState) SetSize(size int) {
 	s.reqSize = size
@@ -112,6 +115,10 @@ func (s *streamState) OnHeader(name, value string) {
 	}
 }
 
+func (s *streamState) RequestError(err error) {
+	s.requestError = err
+}
+
 func (s *streamState) IoError(err error) {
 	s.ioErr = err
 }
@@ -120,8 +127,12 @@ func (s *streamState) RSTStream(code http2.ErrCode) {
 	s.rstStreamCode = &code
 }
 
-func (s *streamState) GoAway(code http2.ErrCode) {
+func (s *streamState) GoAway(code http2.ErrCode, _ []byte) {
 	s.goAwayCode = &code
+}
+
+func (s *streamState) Timeout() {
+	s.timeouted = true
 }
 
 const tabChar = '\t'
@@ -169,13 +180,15 @@ func (s *streamState) result() []byte {
 	}
 	// keyProtoCode
 	switch {
+	case s.requestError != nil:
+		s.reportLine = append(s.reportLine, "client_error"...)
 	case s.rstStreamCode != nil:
 		s.reportLine = append(s.reportLine, "rst_"...)
 		s.reportLine = strconv.AppendInt(s.reportLine, int64(*s.rstStreamCode), 10)
 	case s.goAwayCode != nil:
 		s.reportLine = append(s.reportLine, "goaway_"...)
 		s.reportLine = strconv.AppendInt(s.reportLine, int64(*s.goAwayCode), 10)
-	case s.endTime.Sub(s.startTime) > s.timeout:
+	case s.timeouted:
 		s.reportLine = append(s.reportLine, "grpc_4"...)
 	case s.http2CodeHeader == "":
 		s.reportLine = append(s.reportLine, "http2_1"...) // protocol errro

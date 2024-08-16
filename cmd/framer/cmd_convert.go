@@ -64,7 +64,7 @@ func (c *ConvertCommand) Run(ctx context.Context) error {
 
 	var r8n reflection.DynamicMessagesStore
 	if c.ReflectionAddr != "" {
-		conn, err := grpc.NewClient(
+		conn, err := grpc.Dial(
 			c.ReflectionAddr,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithUserAgent("framer"),

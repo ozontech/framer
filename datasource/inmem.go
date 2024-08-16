@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync/atomic"
 
+	"github.com/ozontech/framer/datasource/decoder"
 	"github.com/ozontech/framer/formats/grpc/ozon/binary"
 	"github.com/ozontech/framer/formats/model"
 	"github.com/ozontech/framer/loader/types"
@@ -13,16 +14,20 @@ import (
 )
 
 type InmemDataSource struct {
-	format  *model.InputFormat
+	reader  model.PooledRequestReader
+	decoder *decoder.Decoder
+
 	factory *RequestAdapterFactory
 	pool    *pool.SlicePool[*memRequest]
 	i       atomic.Int32
-	datas   []model.Data
+	datas   []decoder.Data
 }
 
 func NewInmemDataSource(r io.Reader, factoryOptions ...Option) *InmemDataSource {
 	return &InmemDataSource{
-		binary.NewInput(r),
+		binary.NewInput(r).Reader,
+		decoder.NewDecoder(),
+
 		NewRequestAdapterFactory(factoryOptions...),
 		pool.NewSlicePoolSize[*memRequest](100),
 		atomic.Int32{},
@@ -34,15 +39,15 @@ func (ds *InmemDataSource) Init() error {
 	var b []byte
 	var err error
 	for {
-		b, err = ds.format.Reader.ReadNext()
+		b, err = ds.reader.ReadNext()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
 			return fmt.Errorf("read next request: %w", err)
 		}
-		var data model.Data
-		err = ds.format.Decoder.Unmarshal(&data, b)
+		var data decoder.Data
+		err = ds.decoder.Unmarshal(&data, b)
 		if err != nil {
 			return fmt.Errorf("read next request: %w", err)
 		}

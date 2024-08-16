@@ -27,21 +27,22 @@ func NewProcessor(subprocessors []FrameTypeProcessor) *Processor {
 }
 
 func NewDefaultProcessor(
-	streams types.StreamStore,
+	streamsStore types.StreamStore,
+	streamsLimiter types.StreamsLimiter,
 	fcConn types.FlowControl,
 	priorityFramesChan chan<- []byte,
 ) *Processor {
-	headersFrameProcessor := newHeadersFrameProcessor(streams)
+	headersFrameProcessor := newHeadersFrameProcessor(streamsStore, streamsLimiter)
 	return NewProcessor([]FrameTypeProcessor{
-		http2.FrameData:    newDataFrameProcessor(priorityFramesChan, streams),
+		http2.FrameData:    newDataFrameProcessor(priorityFramesChan, streamsStore, streamsLimiter),
 		http2.FrameHeaders: headersFrameProcessor,
 		// http2.FramePriority not supported
-		http2.FrameRSTStream: newRSTStreamFrameProcessor(streams),
+		http2.FrameRSTStream: newRSTStreamFrameProcessor(streamsStore, streamsLimiter),
 		http2.FrameSettings:  settingsProcessor{},
 		// http2.FramePushPromise not supported
 		http2.FramePing:         newPingFrameProcessor(priorityFramesChan),
 		http2.FrameGoAway:       newGoAwayFrameProcessor(),
-		http2.FrameWindowUpdate: newWindowUpdateFrameProcessor(streams, fcConn),
+		http2.FrameWindowUpdate: newWindowUpdateFrameProcessor(streamsStore, fcConn),
 		http2.FrameContinuation: headersFrameProcessor,
 	})
 }
@@ -119,19 +120,25 @@ func (p *pingFrameProcessor) Process(_ frameheader.FrameHeader, payload []byte, 
 }
 
 type dataFrameProcessor struct {
-	outFramesChan chan<- []byte
-	streams       types.StreamStore
+	outFramesChan  chan<- []byte
+	streamsStore   types.StreamStore
+	streamsLimiter types.StreamsLimiter
 
 	currentWindowUpdateFrame []byte
 	nextWindowUpdateFrame    []byte
 	windowUpdateAcc          int
 }
 
-func newDataFrameProcessor(outFramesChan chan<- []byte, streams types.StreamStore) *dataFrameProcessor {
+func newDataFrameProcessor(
+	outFramesChan chan<- []byte,
+	streamsStore types.StreamStore,
+	streamsLimiter types.StreamsLimiter,
+) *dataFrameProcessor {
 	windowUpdateFrame := [9 + 4]byte{0, 0, 4, byte(http2.FrameWindowUpdate)}
 	return &dataFrameProcessor{
 		outFramesChan,
-		streams,
+		streamsStore,
+		streamsLimiter,
 		windowUpdateFrame[:],
 		bytes.Clone(windowUpdateFrame[:]),
 		0,
@@ -162,7 +169,8 @@ func (p *dataFrameProcessor) Process(header frameheader.FrameHeader, _ []byte, i
 	}
 
 	if header.Flags().Has(http2.FlagDataEndStream) {
-		stream := p.streams.GetAndDelete(header.StreamID())
+		p.streamsLimiter.Release()
+		stream := p.streamsStore.GetAndDelete(header.StreamID())
 		if stream != nil {
 			stream.End()
 		}
@@ -172,13 +180,18 @@ func (p *dataFrameProcessor) Process(header frameheader.FrameHeader, _ []byte, i
 }
 
 type headersFrameProcessor struct {
-	streams       types.StreamStore
+	streamsStore   types.StreamStore
+	streamsLimiter types.StreamsLimiter
+
 	hpackDecoder  *hpack.Decoder
 	currentStream types.Stream
 }
 
-func newHeadersFrameProcessor(streams types.StreamStore) *headersFrameProcessor {
-	p := &headersFrameProcessor{streams: streams}
+func newHeadersFrameProcessor(store types.StreamStore, limiter types.StreamsLimiter) *headersFrameProcessor {
+	p := &headersFrameProcessor{
+		streamsStore:   store,
+		streamsLimiter: limiter,
+	}
 	p.hpackDecoder = hpack.NewDecoder(4096, p.OnHeader)
 	return p
 }
@@ -189,7 +202,7 @@ func (p *headersFrameProcessor) OnHeader(f hpack.HeaderField) {
 
 func (p *headersFrameProcessor) Process(header frameheader.FrameHeader, payload []byte, incomplete bool) error {
 	streamID := header.StreamID()
-	stream := p.streams.Get(streamID)
+	stream := p.streamsStore.Get(streamID)
 	p.currentStream = stream
 	p.hpackDecoder.SetEmitEnabled(stream != nil)
 
@@ -204,18 +217,23 @@ func (p *headersFrameProcessor) Process(header frameheader.FrameHeader, payload 
 
 	if header.Flags().Has(http2.FlagHeadersEndStream) && stream != nil {
 		stream.End()
-		p.streams.Delete(streamID)
+		p.streamsStore.Delete(streamID)
+		p.streamsLimiter.Release()
 	}
 	return nil
 }
 
 type rstStreamFrameProcessor struct {
-	streams types.StreamStore
-	errCode uint32
+	streamsStore   types.StreamStore
+	streamsLimiter types.StreamsLimiter
+	errCode        uint32
 }
 
-func newRSTStreamFrameProcessor(streams types.StreamStore) *rstStreamFrameProcessor {
-	return &rstStreamFrameProcessor{streams, 0}
+func newRSTStreamFrameProcessor(
+	streamsStore types.StreamStore,
+	streamsLimiter types.StreamsLimiter,
+) *rstStreamFrameProcessor {
+	return &rstStreamFrameProcessor{streamsStore, streamsLimiter, 0}
 }
 
 func (p *rstStreamFrameProcessor) Process(header frameheader.FrameHeader, payload []byte, incomplete bool) error {
@@ -229,7 +247,8 @@ func (p *rstStreamFrameProcessor) Process(header frameheader.FrameHeader, payloa
 	errCode := http2.ErrCode(p.errCode)
 
 	streamID := header.StreamID()
-	stream := p.streams.GetAndDelete(streamID)
+	p.streamsLimiter.Release()
+	stream := p.streamsStore.GetAndDelete(streamID)
 	if stream != nil {
 		stream.RSTStream(errCode)
 		stream.End()
@@ -238,15 +257,15 @@ func (p *rstStreamFrameProcessor) Process(header frameheader.FrameHeader, payloa
 }
 
 type windowUpdateFrameProcessor struct {
-	fcConn    types.FlowControl
-	streams   types.StreamStore
-	increment uint32
+	fcConn       types.FlowControl
+	streamsStore types.StreamStore
+	increment    uint32
 }
 
 func newWindowUpdateFrameProcessor(
-	streams types.StreamStore, fcConn types.FlowControl,
+	streamsStore types.StreamStore, fcConn types.FlowControl,
 ) *windowUpdateFrameProcessor {
-	return &windowUpdateFrameProcessor{fcConn, streams, 0}
+	return &windowUpdateFrameProcessor{fcConn, streamsStore, 0}
 }
 
 func (p *windowUpdateFrameProcessor) Process(header frameheader.FrameHeader, payload []byte, incomplete bool) error {
@@ -263,7 +282,7 @@ func (p *windowUpdateFrameProcessor) Process(header frameheader.FrameHeader, pay
 	if streamID == 0 {
 		fc = p.fcConn
 	} else {
-		stream := p.streams.Get(streamID)
+		stream := p.streamsStore.Get(streamID)
 		if stream == nil {
 			return nil
 		}
@@ -299,18 +318,20 @@ func (p *goAwayFrameProcessor) Process(_ frameheader.FrameHeader, payload []byte
 		payload = payload[1:]
 		p.errCode = (p.errCode << 8) | uint32(b)
 	}
+
 	p.debugData = append(p.debugData, payload...)
 
 	if incomplete {
 		return nil
 	}
 
-	code := http2.ErrCode(p.errCode)
 	err := GoAwayError{
-		Code:         code,
+		Code:         http2.ErrCode(p.errCode),
 		LastStreamID: p.lastStreamID,
 		DebugData:    bytes.Clone(p.debugData),
 	}
+
+	p.index = 0
 	p.errCode = 0
 	p.lastStreamID = 0
 	p.debugData = p.debugData[:0]

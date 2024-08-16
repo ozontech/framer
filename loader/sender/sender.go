@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/ozontech/framer/consts"
-	streamsPool "github.com/ozontech/framer/loader/streams/pool"
 	"github.com/ozontech/framer/loader/types"
 	hpackwrapper "github.com/ozontech/framer/utils/hpack_wrapper"
+	"go.uber.org/zap"
 )
 
 type writeCmd struct {
@@ -19,13 +19,15 @@ type writeCmd struct {
 
 type frame struct {
 	chunks [3][]byte
-	types.Releaser
+	cbs    [3]func()
 }
 
 type Sender struct {
-	maxFrameSize int
-	streamPool   *streamsPool.StreamsPool
-	streamStore  types.StreamStore
+	log *zap.Logger
+
+	maxFrameSize      int
+	maxHeaderListSize int
+	streams           types.Streams
 
 	fcConn          types.FlowControl
 	conn            io.Writer
@@ -36,36 +38,56 @@ type Sender struct {
 
 	priorityFrameChan chan []byte
 	frameChan         chan frame
+
+	disableSendBatching bool
 }
 
 func NewSender(
+	log *zap.Logger,
 	conn io.Writer,
 	fcConn types.FlowControl,
-	priorityChunkChan chan []byte,
-	streamPool *streamsPool.StreamsPool,
-	streamStore types.StreamStore,
+	priorityFrameChan chan []byte,
+	streams types.Streams,
 	hpackEncWrapper *hpackwrapper.Wrapper,
 	maxFrameSize int,
+	maxHeaderListSize int,
+	disableSendBatching bool,
 ) *Sender {
 	return &Sender{
-		maxFrameSize,
-		streamPool,
-		streamStore,
+		log,
+		maxFrameSize, maxHeaderListSize,
+
+		streams,
 		fcConn,
 		conn,
 		hpackEncWrapper,
 		1,
 
 		make(chan writeCmd),
-		priorityChunkChan,
-		make(chan frame, 1000),
+		priorityFrameChan,
+		make(chan frame, 16),
+		disableSendBatching,
 	}
 }
 
 func (s *Sender) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go s.processLoop(ctx)
+	if s.disableSendBatching {
+		go instantProcessor(
+			ctx,
+			s.writeCmdChan,
+			s.priorityFrameChan,
+			s.frameChan,
+		)
+	} else {
+		go batchedProcessor(
+			ctx,
+			s.writeCmdChan,
+			s.priorityFrameChan,
+			s.frameChan,
+		)
+	}
 	return s.sendLoop(ctx)
 }
 
@@ -84,48 +106,115 @@ func (s *Sender) sendLoop(ctx context.Context) error {
 	}
 }
 
-func (s *Sender) processLoop(ctx context.Context) {
-	var (
-		writeCmdChan      chan<- writeCmd = s.writeCmdChan
-		priorityChunkChan <-chan []byte   = s.priorityFrameChan
-		frameChan         <-chan frame    = s.frameChan
-	)
+func instantProcessor(
+	ctx context.Context,
+	writeCmdChan chan<- writeCmd,
+	priorityChunkChan <-chan []byte,
+	frameChan <-chan frame,
+) {
+	buffers, cbs := make([][]byte, 0, 3), make(multiCB, 0, 3)
+	buffersNext, cbsNext := make([][]byte, 0, 3), make(multiCB, 0, 3)
 
-	rotator := newRotator()
-	buffers, releasers := rotator.Rotate()
+	doWrite := func() {
+		writeCmdChan <- writeCmd{buffers, cbs.Call}
+		buffers, cbs, buffersNext, cbsNext = buffersNext[:0], cbsNext[:0], buffers, cbs
+	}
+
+l:
+	for {
+		select {
+		case b := <-priorityChunkChan:
+			buffers = append(buffers, b)
+		default:
+			select {
+			case b := <-priorityChunkChan:
+				buffers = append(buffers, b)
+			case f, ok := <-frameChan:
+				if !ok {
+					break l
+				}
+
+				for _, c := range f.chunks {
+					if c == nil {
+						break
+					}
+					buffers = append(buffers, c)
+				}
+				for _, cb := range f.cbs {
+					if cb != nil {
+						cbs = append(cbs, cb)
+					}
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+		doWrite()
+	}
+
+	for {
+		select {
+		case b := <-priorityChunkChan:
+			buffers = append(buffers, b)
+		case <-ctx.Done():
+			return
+		}
+		doWrite()
+	}
+}
+
+func batchedProcessor(
+	ctx context.Context,
+	writeCmdChan chan<- writeCmd,
+	priorityChunkChan <-chan []byte,
+	frameChan <-chan frame,
+) {
+	buffers, cbs := make([][]byte, 1, 16), make(multiCB, 0, 16)
+	buffersNext, cbsNext := make([][]byte, 1, 16), make(multiCB, 0, 16)
+
+	realTimer := time.NewTimer(consts.SendBatchTimeout)
+	var noopTimerChan <-chan time.Time
+	timerChan := noopTimerChan
 
 	lastWrite := time.Now()
-	doWrite := func(b net.Buffers) {
+	doWrite := func(withFirst bool) {
+		var b net.Buffers
+		if withFirst {
+			b = buffers[:]
+		} else {
+			b = buffers[1:]
+		}
 		if len(b) == 0 {
 			return
 		}
 
-		writeCmdChan <- writeCmd{b, releasers.Release}
-		buffers, releasers = rotator.Rotate()
+		writeCmdChan <- writeCmd{b, cbs.Call}
+		buffers, cbs, buffersNext, cbsNext = buffersNext[:1], cbsNext[:0], buffers, cbs
 		lastWrite = time.Now()
+		timerChan = noopTimerChan
 	}
 
-	timer := time.NewTimer(consts.SendBatchTimeout)
 l:
 	for {
-		timer.Reset(consts.SendBatchTimeout - time.Since(lastWrite))
 		select {
 		case b := <-priorityChunkChan:
 			// если получили приритетный фрейм, то он должен записаться первым
 			buffers[0] = b
-			doWrite(buffers)
+			doWrite(true)
 		default:
 			select {
 			case b := <-priorityChunkChan:
 				buffers[0] = b
-				doWrite(buffers)
+				doWrite(true) // тут обязательно реслайситься т.к. net.Buffers изменяет слайс
 			case f, ok := <-frameChan:
+				timerChan = realTimer.C
+
 				if !ok {
-					doWrite(buffers[1:])
+					doWrite(false)
 					break l
 				}
-				if len(f.chunks)+len(buffers) > cap(buffers) {
-					doWrite(buffers[1:])
+				if len(f.chunks)+len(buffers) > 2048 {
+					doWrite(false)
 				}
 
 				for _, c := range f.chunks {
@@ -135,18 +224,21 @@ l:
 
 					buffers = append(buffers, c)
 				}
-				if f.Releaser != nil {
-					releasers = append(releasers, f.Releaser)
+				for _, cb := range f.cbs {
+					if cb != nil {
+						cbs = append(cbs, cb)
+					}
 				}
 			case <-ctx.Done():
-				doWrite(buffers[1:])
+				doWrite(false)
 				return
 			// time.After аллоцирует память в куче т.к. на каждый вызов создает канал
 			// => сильно медленее переиспользования таймера
-			case <-timer.C:
-				doWrite(buffers[1:])
+			case <-timerChan:
+				doWrite(false)
 			}
 		}
+		realTimer.Reset(consts.SendBatchTimeout - time.Since(lastWrite))
 	}
 
 	for {
@@ -154,7 +246,7 @@ l:
 		case b := <-priorityChunkChan:
 			// если получили приритетный фрейм, то он должен записаться первым
 			buffers[0] = b
-			doWrite(buffers)
+			doWrite(true)
 		case <-ctx.Done():
 			return
 		}
@@ -165,79 +257,42 @@ func (s *Sender) Send(a types.Req) {
 	s.send(a)
 }
 
-// var n atomic.Int64
-//
-// func init() {
-// 	go func() {
-// 		p := message.NewPrinter(language.English)
-// 		for range time.Tick(time.Second) {
-// 			p.Printf("%d\n", n.Swap(0))
-// 		}
-// 	}()
-// }
-//
-// const (
-// 	acquire      = true
-// 	setupRequest = true
-// 	saveToStore  = true
-// )
-//
-// func (s *Sender) sendNoop1(a types.Req) {
-// 	n.Add(1)
-//
-// 	s.streamID += 2
-// 	if setupRequest {
-// 		a.SetUp(s.streamID, s.hpackEncWrapper)
-// 	}
-// 	a.Release()
-//
-// 	if acquire {
-// 		stream := s.streamPool.Acquire(s.streamID, a.Tag())
-// 		stream.SetSize(a.Size())
-// 		stream.End()
-//
-// 		if saveToStore {
-// 			s.streamStore.Set(s.streamID, stream)
-// 			s.streamStore.Delete(s.streamID)
-// 		}
-// 	}
-// }
-//
-// func (s *Sender) sendNoop2(a types.Req) {
-// 	n.Add(1)
-// 	s.streamID += 2
-// 	// a.SetUp(s.streamID, s.hpackEncWrapper)
-//
-// 	stream := s.streamPool.Acquire(s.streamID, a.Tag())
-// 	a.Release()
-// 	stream.End()
-// }
-
 func (s *Sender) send(a types.Req) {
 	// n.Add(1)
 	s.streamID += 2
-	frames := a.SetUp(s.maxFrameSize, s.streamID, s.hpackEncWrapper)
 
-	stream := s.streamPool.Acquire(s.streamID, a.Tag())
-	stream.SetSize(a.Size())
-	s.streamStore.Set(s.streamID, stream)
+	s.streams.Limiter.WaitAllow()
+	stream := s.streams.Pool.Acquire(s.streamID, a.Tag())
 
-	var (
-		i         int
-		lastIndex = len(frames) - 1
+	frames, err := a.SetUp(
+		s.maxFrameSize, s.maxHeaderListSize,
+		s.streamID, s.hpackEncWrapper,
 	)
-	for {
+	if err != nil {
+		stream.RequestError(err)
+		stream.End()
+		return
+	}
+	stream.SetSize(a.Size())
+
+	s.streams.Store.Set(s.streamID, stream)
+
+	lastIndex := len(frames) - 1
+	for i := 0; i <= lastIndex; i++ {
 		f := frames[i]
 		if !stream.FC().Wait(f.FlowControlPrice) ||
 			!s.fcConn.Wait(f.FlowControlPrice) {
 			return
 		}
-		if i == lastIndex {
-			s.frameChan <- frame{chunks: f.Chunks, Releaser: a}
-			break
+		frame := frame{chunks: f.Chunks}
+		if i == 0 {
+			frame.cbs[0] = stream.FirstByteSent
 		}
-		s.frameChan <- frame{chunks: f.Chunks}
-		i++
+		if i == lastIndex {
+			frame.cbs[1] = stream.LastByteSent
+			frame.cbs[2] = a.Release
+		}
+		s.frameChan <- frame
 	}
 }
 
@@ -245,30 +300,10 @@ func (s *Sender) Flush() {
 	close(s.frameChan)
 }
 
-type rotatorItem struct {
-	buffers   [consts.ChunksBufferSize][]byte
-	releasers [consts.ChunksBufferSize]types.Releaser
-}
-type rotator struct {
-	// net.Buffers.WriteTo может уменьшать капасити слайса,
-	// поэтому, чтобы переиспользовать память используется массив, с которого создается слайс
-	current *rotatorItem
-	next    *rotatorItem
-}
+type multiCB []func()
 
-func newRotator() *rotator {
-	return &rotator{new(rotatorItem), new(rotatorItem)}
-}
-
-func (r *rotator) Rotate() ([][]byte, releasers) {
-	r.current, r.next = r.next, r.current
-	return r.current.buffers[:1], r.current.releasers[:0]
-}
-
-type releasers []types.Releaser
-
-func (rr releasers) Release() {
-	for _, r := range rr {
-		r.Release()
+func (m multiCB) Call() {
+	for _, cb := range m {
+		cb()
 	}
 }

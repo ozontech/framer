@@ -28,7 +28,7 @@ func TestE2E(t *testing.T) {
 	a := assert.New(t)
 	clientConn, serverConn := net.Pipe()
 	l := newLoader(
-		clientConn, nooReporter{},
+		clientConn, noopReporter{},
 		loaderConfig{timeout: consts.DefaultTimeout}, log,
 	)
 
@@ -162,18 +162,22 @@ func TestE2E(t *testing.T) {
 	a.NoError(g.Wait())
 }
 
-type nooReporter struct{}
+type noopReporter struct{}
 
-func (a nooReporter) Acquire(string) types.StreamState {
+func (a noopReporter) Acquire(string, uint32) types.StreamState {
 	return streamState{}
 }
 
 type streamState struct{}
 
-func (s streamState) SetSize(int)             {}
-func (s streamState) Reset(string)            {}
-func (s streamState) OnHeader(string, string) {}
-func (s streamState) IoError(error)           {}
-func (s streamState) RSTStream(http2.ErrCode) {}
-func (s streamState) GoAway(http2.ErrCode)    {}
-func (s streamState) End()                    {}
+func (s streamState) FirstByteSent()               {}
+func (s streamState) LastByteSent()                {}
+func (s streamState) RequestError(error)           {}
+func (s streamState) SetSize(int)                  {}
+func (s streamState) Reset(string)                 {}
+func (s streamState) OnHeader(string, string)      {}
+func (s streamState) IoError(error)                {}
+func (s streamState) RSTStream(http2.ErrCode)      {}
+func (s streamState) GoAway(http2.ErrCode, []byte) {}
+func (s streamState) Timeout()                     {}
+func (s streamState) End()                         {}

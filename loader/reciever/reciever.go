@@ -45,13 +45,13 @@ func NewReciever(
 	conn net.Conn,
 	fcConn types.FlowControl,
 	priorityFramesChan chan<- []byte,
-	streams types.StreamStore,
+	streams types.Streams,
 ) *Reciever {
 	return &Reciever{
 		conn,
 		make([]byte, consts.RecieveBufferSize),
 		make([]byte, consts.RecieveBufferSize),
-		NewDefaultProcessor(streams, fcConn, priorityFramesChan),
+		NewDefaultProcessor(streams.Store, streams.Limiter, fcConn, priorityFramesChan),
 	}
 }
 

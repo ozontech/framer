@@ -66,6 +66,7 @@ func BenchmarkE2E(b *testing.B) {
 		conn,
 		reporter,
 		consts.DefaultTimeout,
+		false,
 		zaptest.NewLogger(b),
 	)
 	if err != nil {
@@ -129,6 +130,7 @@ func BenchmarkE2EInMemDatasource(b *testing.B) {
 		conn,
 		reporter,
 		consts.DefaultTimeout,
+		false,
 		zaptest.NewLogger(b),
 	)
 	a.NoError(err)

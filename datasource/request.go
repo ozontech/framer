@@ -2,68 +2,44 @@ package datasource
 
 import (
 	"bytes"
-	"strings"
+	"fmt"
 	"time"
-	"unsafe"
 
-	"github.com/ozontech/framer/formats/model"
+	"github.com/ozontech/framer/datasource/decoder"
 	"github.com/ozontech/framer/frameheader"
 	"github.com/ozontech/framer/loader/types"
 	grpcutil "github.com/ozontech/framer/utils/grpc"
 	"golang.org/x/net/http2"
 )
 
+type config struct {
+	additionalHeaders []string
+	metaMiddleware    MetaMiddleware
+}
+
 type Option interface {
-	apply(f *RequestAdapterFactory)
+	apply(f *config)
 }
 
 type RequestAdapterFactory struct {
-	staticPseudoHeaders  []string
-	staticRegularHeaders []string
-	headerFilter         func(k string) (mustSkip bool)
+	metaMiddleware MetaMiddleware
 }
 
 func NewRequestAdapterFactory(ops ...Option) *RequestAdapterFactory {
-	f := &RequestAdapterFactory{
-		headerFilter: func(k string) (allowed bool) { return true },
-		staticPseudoHeaders: []string{
-			":method", "POST",
-			":scheme", "http",
-		},
-		staticRegularHeaders: []string{
-			"content-type", "application/grpc",
-			"te", "trailers",
-		},
+	c := config{
+		metaMiddleware: noopMiddleware{},
 	}
 	for _, o := range ops {
-		o.apply(f)
+		o.apply(&c)
 	}
-	return f
+
+	return &RequestAdapterFactory{
+		metaMiddleware: newDefaultMiddleware(c.metaMiddleware, c.additionalHeaders...),
+	}
 }
 
 func (f *RequestAdapterFactory) Build() *RequestAdapter {
-	return NewRequestAdapter(
-		f.isAllowedMeta,
-		f.staticPseudoHeaders,
-		f.staticRegularHeaders,
-	)
-}
-
-func (f *RequestAdapterFactory) isAllowedMeta(k string) (allowed bool) {
-	if k == "" {
-		return false
-	}
-	// отфильтровываем псевдохедеры из меты т.к.
-	// стандартный клиент также псевдохедеры не пропускает
-	// и псевдохедерами можно легко сломать стрельбу
-	if k[0] == ':' {
-		return false
-	}
-	switch k {
-	case "content-type", "te", "grpc-timeout":
-		return false
-	}
-	return f.headerFilter(k)
+	return NewRequestAdapter(f.metaMiddleware)
 }
 
 type frameHeaders []byte
@@ -86,80 +62,54 @@ func (fp *frameHeaders) Get() frameheader.FrameHeader {
 }
 
 type RequestAdapter struct {
-	isAllowedMeta func(k string) bool
-	staticPseudo  []string
-	staticRegular []string
-	size          int
+	metaMiddleware MetaMiddleware
+	size           int
 
 	frameHeaders  *frameHeaders
 	payloadPrefix [5]byte
 	frames        []types.Frame
 	headersBuf    *bytes.Buffer
-	data          model.Data
+	data          decoder.Data
 }
 
-func NewRequestAdapter(
-	isAllowedMeta func(k string) bool,
-	staticPseudo []string,
-	staticRegular []string,
-) *RequestAdapter {
+func NewRequestAdapter(metaMiddleware MetaMiddleware) *RequestAdapter {
 	return &RequestAdapter{
-		frameHeaders:  newFrameHeaders(),
-		frames:        make([]types.Frame, 2),
-		isAllowedMeta: isAllowedMeta,
-		staticPseudo:  staticPseudo,
-		staticRegular: staticRegular,
-		headersBuf:    bytes.NewBuffer(nil),
+		frameHeaders:   newFrameHeaders(),
+		frames:         make([]types.Frame, 2),
+		metaMiddleware: metaMiddleware,
+		headersBuf:     bytes.NewBuffer(nil),
 	}
 }
 
-func (a *RequestAdapter) setData(data model.Data) { a.data = data }
-func (a *RequestAdapter) FullMethodName() string  { return unsafeString(a.data.Method) }
-func (a *RequestAdapter) Tag() string             { return unsafeString(a.data.Tag) }
-
-// TODO(pgribanov): после реализации собственной системы энкодинга хедеров,
-// отказаться от unsafe
-func unsafeString(b []byte) string {
-	//nolint:gosec
-	return unsafe.String(&b[0], len(b))
-}
+func (a *RequestAdapter) setData(data decoder.Data) { a.data = data }
+func (a *RequestAdapter) FullMethodName() string    { return a.data.Method }
+func (a *RequestAdapter) Tag() string               { return a.data.Tag }
 
 func (a *RequestAdapter) setUpHeaders(
 	maxFramePayloadLen int,
+	maxHeaderListSize int, // https://datatracker.ietf.org/doc/html/rfc9113#section-6.5.2-2.12.1
 	streamID uint32,
 	hpack types.HPackFieldWriter,
-) {
+) error {
 	a.size = 0
+	var headerListSize int // https://datatracker.ietf.org/doc/html/rfc9113#section-6.5.2-2.12.1
 	hpack.SetWriter(a.headersBuf)
 
 	data := a.data
-	//nolint:errcheck // пишем в буфер, это безопасно
-	hpack.WriteField(":path", unsafeString(data.Method))
-
-	// добавляем статичные псевдохедеры
-	staticPseudo := a.staticPseudo
-	for i := 0; i < len(staticPseudo); i += 2 {
-		//nolint:errcheck // пишем в буфер, это безопасно
-		hpack.WriteField(staticPseudo[i], staticPseudo[i+1])
-	}
-
-	// добавляем статичные хедеры
-	staticRegular := a.staticRegular
-	for i := 0; i < len(staticRegular); i += 2 {
-		//nolint:errcheck // пишем в буфер, это безопасно
-		hpack.WriteField(staticRegular[i], staticRegular[i+1])
-	}
+	headerListSize += len(":path") + len(data.Method)
+	hpack.WriteField(":path", data.Method)
+	a.metaMiddleware.WriteAdditional(hpack)
 
 	// добавляем мету из запроса
 	for _, m := range data.Metadata {
-		k := unsafeString(m.Name)
-		v := unsafeString(m.Value)
-		if !a.isAllowedMeta(k) {
+		if !a.metaMiddleware.IsAllowed(m.Name) {
 			continue
 		}
-
-		//nolint:errcheck // пишем в буфер, это безопасно
-		hpack.WriteField(k, v)
+		headerListSize += len(m.Name) + len(m.Value)
+		hpack.WriteField(m.Name, m.Value)
+	}
+	if headerListSize > maxHeaderListSize {
+		return fmt.Errorf("header list size exeed limit: %d > %d", headerListSize, maxHeaderListSize)
 	}
 
 	for {
@@ -190,6 +140,7 @@ func (a *RequestAdapter) setUpHeaders(
 			break
 		}
 	}
+	return nil
 }
 
 func (a *RequestAdapter) setUpPayload(
@@ -269,41 +220,51 @@ func (a *RequestAdapter) Size() int {
 
 func (a *RequestAdapter) SetUp(
 	maxFramePayloadLen int,
+	maxHeaderListSize int,
 	streamID uint32,
 	hpackFieldWriter types.HPackFieldWriter,
-) []types.Frame {
+) ([]types.Frame, error) {
 	a.headersBuf.Reset()
 	a.frameHeaders.Reset()
 
 	a.frames = a.frames[:0]
 
-	a.setUpHeaders(maxFramePayloadLen, streamID, hpackFieldWriter)
+	err := a.setUpHeaders(maxFramePayloadLen, maxHeaderListSize, streamID, hpackFieldWriter)
 	a.setUpPayload(maxFramePayloadLen, streamID)
 
-	return a.frames
+	return a.frames, err
 }
 
 func WithAdditionalHeader(k, v string) Option {
-	return additionalHeadersOpts([]string{k, v})
+	return fnOption(func(c *config) {
+		c.additionalHeaders = append(c.additionalHeaders, k, v)
+	})
 }
 
 func WithAdditionalHeaders(headers []string) Option {
-	return additionalHeadersOpts(headers)
+	return fnOption(func(c *config) {
+		c.additionalHeaders = append(c.additionalHeaders, headers...)
+	})
 }
 
 func WithTimeout(t time.Duration) Option {
-	return additionalHeadersOpts([]string{"grpc-timeout", grpcutil.EncodeDuration(t)})
+	return fnOption(func(c *config) {
+		c.additionalHeaders = append(c.additionalHeaders, "grpc-timeout", grpcutil.EncodeDuration(t))
+	})
 }
 
-type additionalHeadersOpts []string
-
-func (h additionalHeadersOpts) apply(f *RequestAdapterFactory) {
-	for i := 0; i < len(h); i += 2 {
-		k, v := h[i], h[i+1]
-		if strings.HasPrefix(k, ":") {
-			f.staticPseudoHeaders = append(f.staticPseudoHeaders, k, v)
-		} else {
-			f.staticRegularHeaders = append(f.staticRegularHeaders, k, v)
-		}
-	}
+func WithMetaMiddleware(mw MetaMiddleware) Option {
+	return fnOption(func(c *config) { c.metaMiddleware = mw })
 }
+
+type metaMiddlewareOpt struct {
+	mw MetaMiddleware
+}
+
+func (o metaMiddlewareOpt) apply(f *RequestAdapterFactory) {
+	f.metaMiddleware = o.mw
+}
+
+type fnOption func(c *config)
+
+func (fn fnOption) apply(c *config) { fn(c) }
