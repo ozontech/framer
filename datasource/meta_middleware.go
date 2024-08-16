@@ -13,7 +13,7 @@ type MetaMiddleware interface {
 
 type noopMiddleware struct{}
 
-func (noopMiddleware) IsAllowed(key string) bool              { return true }
+func (noopMiddleware) IsAllowed(string) bool                  { return true }
 func (noopMiddleware) WriteAdditional(types.HPackFieldWriter) {}
 
 type defaultMiddleware struct {
@@ -47,7 +47,7 @@ func newDefaultMiddleware(next MetaMiddleware, additionalHeaders ...string) *def
 	return m
 }
 
-func (f *defaultMiddleware) IsAllowed(k string) (allowed bool) {
+func (m *defaultMiddleware) IsAllowed(k string) (allowed bool) {
 	if k == "" {
 		return false
 	}
@@ -61,7 +61,7 @@ func (f *defaultMiddleware) IsAllowed(k string) (allowed bool) {
 	case "content-type", "te", "grpc-timeout":
 		return false
 	}
-	return f.next.IsAllowed(k)
+	return m.next.IsAllowed(k)
 }
 
 func (m *defaultMiddleware) WriteAdditional(hpack types.HPackFieldWriter) {

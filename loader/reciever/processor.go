@@ -342,7 +342,7 @@ type settingsProcessor struct{}
 
 func (p settingsProcessor) Process(
 	header frameheader.FrameHeader,
-	payload []byte,
+	_ []byte,
 	incomplete bool,
 ) error {
 	if incomplete {

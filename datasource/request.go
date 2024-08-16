@@ -257,14 +257,6 @@ func WithMetaMiddleware(mw MetaMiddleware) Option {
 	return fnOption(func(c *config) { c.metaMiddleware = mw })
 }
 
-type metaMiddlewareOpt struct {
-	mw MetaMiddleware
-}
-
-func (o metaMiddlewareOpt) apply(f *RequestAdapterFactory) {
-	f.metaMiddleware = o.mw
-}
-
 type fnOption func(c *config)
 
 func (fn fnOption) apply(c *config) { fn(c) }

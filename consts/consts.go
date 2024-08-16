@@ -12,6 +12,6 @@ const (
 
 	DefaultInitialWindowSize = 65_535
 	DefaultTimeout           = 11 * time.Second
-	DefaultMaxFrameSize      = 16384 // Максимальная длина пейлоада фрейма в grpc. У http2 ограничение больше.
+	DefaultMaxFrameSize      = 16384 // DefaultMaxFrameSize - максимальная длина пейлоада фрейма в grpc. У http2 ограничение больше.
 	DefaultMaxHeaderListSize = math.MaxUint32
 )

@@ -284,6 +284,7 @@ func (s *Sender) send(a types.Req) {
 			!s.fcConn.Wait(f.FlowControlPrice) {
 			return
 		}
+		//nolint:govet
 		frame := frame{chunks: f.Chunks}
 		if i == 0 {
 			frame.cbs[0] = stream.FirstByteSent

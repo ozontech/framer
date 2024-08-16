@@ -57,7 +57,7 @@ func (a *Reporter) Close() error {
 	return nil
 }
 
-func (a *Reporter) Acquire(tag string, streamID uint32) types.StreamState {
+func (a *Reporter) Acquire(tag string, _ uint32) types.StreamState {
 	a.req.Add(1)
 	ss, ok := a.pool.Acquire()
 	if !ok {

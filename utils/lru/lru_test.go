@@ -7,6 +7,8 @@ import (
 )
 
 func TestLRU(t *testing.T) {
+	t.Parallel()
+
 	a := assert.New(t)
 	l := New(3)
 	l.GetOrAdd([]byte("one"))

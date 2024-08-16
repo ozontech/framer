@@ -51,7 +51,7 @@ func TestFrameHeadersPool(t *testing.T) {
 
 type metaMW struct{}
 
-func (metaMW) IsAllowed(key string) bool { return true }
+func (metaMW) IsAllowed(string) bool { return true }
 func (metaMW) WriteAdditional(fw types.HPackFieldWriter) {
 	fw.WriteField(":method", "POST")
 	fw.WriteField(":authority", ":authority-v")

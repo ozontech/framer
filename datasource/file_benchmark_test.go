@@ -28,7 +28,11 @@ func BenchmarkFileDataSource(b *testing.B) {
 	go func() {
 		defer close(done)
 		for r := range rr {
-			r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, &noopHpackFieldWriter{})
+			_, err := r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, &noopHpackFieldWriter{})
+			if err != nil {
+				b.Error(err)
+				return
+			}
 			b.SetBytes(int64(r.Size()))
 			r.Release()
 		}
@@ -61,7 +65,11 @@ func BenchmarkRequestSetupNoop(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, &noopHpackFieldWriter{})
+		_, err := r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, &noopHpackFieldWriter{})
+		if err != nil {
+			b.Error(err)
+			return
+		}
 		b.SetBytes(int64(r.Size()))
 	}
 }
@@ -82,7 +90,11 @@ func BenchmarkRequestSetupHpack(b *testing.B) {
 	hpackwrapper := hpackwrapper.NewWrapper()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, hpackwrapper)
+		_, err := r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, 0, hpackwrapper)
+		if err != nil {
+			b.Error(err)
+			return
+		}
 		b.SetBytes(int64(r.Size()))
 	}
 }

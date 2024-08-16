@@ -23,7 +23,7 @@ func New(maxSize int) *LRU {
 	}
 }
 
-// Get fetch item from lru and increase eviction order
+// GetOrAdd fetch item from lru and increase eviction order or create
 func (l *LRU) GetOrAdd(keyB []byte) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -35,7 +35,7 @@ func (l *LRU) GetOrAdd(keyB []byte) string {
 	}
 
 	if len(l.items) >= l.maxSize {
-		element := l.list.Back()
+		element = l.list.Back()
 		l.list.Remove(element)
 		delete(l.items, element.Value.(string))
 	}
