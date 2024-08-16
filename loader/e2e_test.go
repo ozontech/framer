@@ -58,7 +58,7 @@ func TestE2E(t *testing.T) {
 	})
 
 	framer := http2.NewFramer(serverConn, serverConn)
-	framer.ReadMetaHeaders = hpack.NewDecoder(4096, func(f hpack.HeaderField) {})
+	framer.ReadMetaHeaders = hpack.NewDecoder(4096, func(hpack.HeaderField) {})
 	framer.SetMaxReadFrameSize(256)
 	respChan := make(chan uint32, 128)
 

@@ -130,7 +130,7 @@ type options struct {
 
 func applyOptions(optFns ...Option) *options {
 	opts := &options{
-		filter: func(k []byte) (allowed bool) { return true },
+		filter: func([]byte) (allowed bool) { return true },
 	}
 
 	for _, o := range optFns {

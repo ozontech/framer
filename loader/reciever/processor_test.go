@@ -70,9 +70,9 @@ func TestProcessor(t *testing.T) {
 	b := framer.W.Bytes()
 
 	tpPing.ProcessFunc = func(
-		header frameheader.FrameHeader,
-		payload []byte,
-		incomplete bool,
+		frameheader.FrameHeader,
+		[]byte,
+		bool,
 	) error {
 		return nil
 	}
@@ -205,7 +205,7 @@ func TestHeadersFrameProcessor(t *testing.T) {
 		const streamID uint32 = 21123
 
 		stream := &StreamMock{
-			OnHeaderFunc: func(k, v string) {},
+			OnHeaderFunc: func(string, string) {},
 		}
 		fp := newHeadersFrameProcessor(&StreamStoreMock{
 			GetFunc: func(s uint32) types.Stream {
