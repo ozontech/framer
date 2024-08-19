@@ -12,13 +12,15 @@ import (
 	"golang.org/x/net/http2"
 )
 
+const streamID = 1
+
 func TestPhout(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
 	const timeout = 11 * time.Second
 
 	b := new(bytes.Buffer)
-	r := New(b, timeout)
+	r := New(b)
 	errChan := make(chan error)
 	go func() {
 		errChan <- r.Run()
@@ -30,7 +32,7 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("tag1")
+		state := r.Acquire("tag1", streamID)
 		state.SetSize(111)
 		state.OnHeader(":status", "200")
 		state.OnHeader("grpc-status", "0")
@@ -50,7 +52,7 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("tag2")
+		state := r.Acquire("tag2", streamID)
 		state.SetSize(222)
 		state.OnHeader(":status", "200")
 		state.OnHeader("grpc-status", "0")
@@ -71,7 +73,7 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("tag2")
+		state := r.Acquire("tag2", streamID)
 		state.SetSize(222)
 		state.OnHeader(":status", "200")
 		state.OnHeader("grpc-status", "0")
@@ -92,7 +94,7 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("")
+		state := r.Acquire("", streamID)
 		state.RSTStream(http2.ErrCodeInternal)
 
 		endTime := time.Now()
@@ -110,8 +112,8 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("")
-		state.GoAway(http2.ErrCodeInternal)
+		state := r.Acquire("", streamID)
+		state.GoAway(http2.ErrCodeInternal, nil)
 
 		endTime := time.Now()
 		now = func() time.Time { return endTime }
@@ -128,10 +130,11 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("")
+		state := r.Acquire("", streamID)
 
 		endTime := startTime.Add(timeout + 1)
 		now = func() time.Time { return endTime }
+		state.Timeout()
 		state.End()
 
 		expected += fmt.Sprintf(
@@ -145,7 +148,7 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("")
+		state := r.Acquire("", streamID)
 
 		endTime := time.Now()
 		now = func() time.Time { return endTime }
@@ -162,7 +165,7 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("")
+		state := r.Acquire("", streamID)
 
 		endTime := time.Now()
 		now = func() time.Time { return endTime }
@@ -181,7 +184,7 @@ func TestPhout(t *testing.T) {
 		startTime := time.Now()
 		now = func() time.Time { return startTime }
 
-		state := r.Acquire("")
+		state := r.Acquire("", streamID)
 
 		endTime := time.Now()
 		now = func() time.Time { return endTime }
@@ -198,6 +201,5 @@ func TestPhout(t *testing.T) {
 
 	r.Close()
 	a.NoError(<-errChan)
-
 	a.Equal(expected, b.String())
 }

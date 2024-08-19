@@ -14,13 +14,13 @@ permissions:
 jobs:
   golangci:
     name: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: stable
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v6.1.0
         with:
-          version: v1.58
+          version: v1.60.1

@@ -257,6 +257,102 @@ func (mock *StreamStoreMock) SetCalls() []struct {
 	return calls
 }
 
+// Ensure, that StreamsLimiterMock does implement types.StreamsLimiter.
+// If this is not the case, regenerate this file with moq.
+var _ types.StreamsLimiter = &StreamsLimiterMock{}
+
+// StreamsLimiterMock is a mock implementation of types.StreamsLimiter.
+//
+//	func TestSomethingThatUsesStreamsLimiter(t *testing.T) {
+//
+//		// make and configure a mocked types.StreamsLimiter
+//		mockedStreamsLimiter := &StreamsLimiterMock{
+//			ReleaseFunc: func()  {
+//				panic("mock out the Release method")
+//			},
+//			WaitAllowFunc: func()  {
+//				panic("mock out the WaitAllow method")
+//			},
+//		}
+//
+//		// use mockedStreamsLimiter in code that requires types.StreamsLimiter
+//		// and then make assertions.
+//
+//	}
+type StreamsLimiterMock struct {
+	// ReleaseFunc mocks the Release method.
+	ReleaseFunc func()
+
+	// WaitAllowFunc mocks the WaitAllow method.
+	WaitAllowFunc func()
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// Release holds details about calls to the Release method.
+		Release []struct {
+		}
+		// WaitAllow holds details about calls to the WaitAllow method.
+		WaitAllow []struct {
+		}
+	}
+	lockRelease   sync.RWMutex
+	lockWaitAllow sync.RWMutex
+}
+
+// Release calls ReleaseFunc.
+func (mock *StreamsLimiterMock) Release() {
+	if mock.ReleaseFunc == nil {
+		panic("StreamsLimiterMock.ReleaseFunc: method is nil but StreamsLimiter.Release was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockRelease.Lock()
+	mock.calls.Release = append(mock.calls.Release, callInfo)
+	mock.lockRelease.Unlock()
+	mock.ReleaseFunc()
+}
+
+// ReleaseCalls gets all the calls that were made to Release.
+// Check the length with:
+//
+//	len(mockedStreamsLimiter.ReleaseCalls())
+func (mock *StreamsLimiterMock) ReleaseCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockRelease.RLock()
+	calls = mock.calls.Release
+	mock.lockRelease.RUnlock()
+	return calls
+}
+
+// WaitAllow calls WaitAllowFunc.
+func (mock *StreamsLimiterMock) WaitAllow() {
+	if mock.WaitAllowFunc == nil {
+		panic("StreamsLimiterMock.WaitAllowFunc: method is nil but StreamsLimiter.WaitAllow was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockWaitAllow.Lock()
+	mock.calls.WaitAllow = append(mock.calls.WaitAllow, callInfo)
+	mock.lockWaitAllow.Unlock()
+	mock.WaitAllowFunc()
+}
+
+// WaitAllowCalls gets all the calls that were made to WaitAllow.
+// Check the length with:
+//
+//	len(mockedStreamsLimiter.WaitAllowCalls())
+func (mock *StreamsLimiterMock) WaitAllowCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockWaitAllow.RLock()
+	calls = mock.calls.WaitAllow
+	mock.lockWaitAllow.RUnlock()
+	return calls
+}
+
 // Ensure, that StreamMock does implement types.Stream.
 // If this is not the case, regenerate this file with moq.
 var _ types.Stream = &StreamMock{}
@@ -273,7 +369,10 @@ var _ types.Stream = &StreamMock{}
 //			FCFunc: func() types.FlowControl {
 //				panic("mock out the FC method")
 //			},
-//			GoAwayFunc: func(code http2.ErrCode)  {
+//			FirstByteSentFunc: func()  {
+//				panic("mock out the FirstByteSent method")
+//			},
+//			GoAwayFunc: func(code http2.ErrCode, debugData []byte)  {
 //				panic("mock out the GoAway method")
 //			},
 //			IDFunc: func() uint32 {
@@ -282,14 +381,23 @@ var _ types.Stream = &StreamMock{}
 //			IoErrorFunc: func(err error)  {
 //				panic("mock out the IoError method")
 //			},
+//			LastByteSentFunc: func()  {
+//				panic("mock out the LastByteSent method")
+//			},
 //			OnHeaderFunc: func(name string, value string)  {
 //				panic("mock out the OnHeader method")
 //			},
 //			RSTStreamFunc: func(code http2.ErrCode)  {
 //				panic("mock out the RSTStream method")
 //			},
+//			RequestErrorFunc: func(err error)  {
+//				panic("mock out the RequestError method")
+//			},
 //			SetSizeFunc: func(n int)  {
 //				panic("mock out the SetSize method")
+//			},
+//			TimeoutFunc: func()  {
+//				panic("mock out the Timeout method")
 //			},
 //		}
 //
@@ -304,8 +412,11 @@ type StreamMock struct {
 	// FCFunc mocks the FC method.
 	FCFunc func() types.FlowControl
 
+	// FirstByteSentFunc mocks the FirstByteSent method.
+	FirstByteSentFunc func()
+
 	// GoAwayFunc mocks the GoAway method.
-	GoAwayFunc func(code http2.ErrCode)
+	GoAwayFunc func(code http2.ErrCode, debugData []byte)
 
 	// IDFunc mocks the ID method.
 	IDFunc func() uint32
@@ -313,14 +424,23 @@ type StreamMock struct {
 	// IoErrorFunc mocks the IoError method.
 	IoErrorFunc func(err error)
 
+	// LastByteSentFunc mocks the LastByteSent method.
+	LastByteSentFunc func()
+
 	// OnHeaderFunc mocks the OnHeader method.
 	OnHeaderFunc func(name string, value string)
 
 	// RSTStreamFunc mocks the RSTStream method.
 	RSTStreamFunc func(code http2.ErrCode)
 
+	// RequestErrorFunc mocks the RequestError method.
+	RequestErrorFunc func(err error)
+
 	// SetSizeFunc mocks the SetSize method.
 	SetSizeFunc func(n int)
+
+	// TimeoutFunc mocks the Timeout method.
+	TimeoutFunc func()
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -330,10 +450,15 @@ type StreamMock struct {
 		// FC holds details about calls to the FC method.
 		FC []struct {
 		}
+		// FirstByteSent holds details about calls to the FirstByteSent method.
+		FirstByteSent []struct {
+		}
 		// GoAway holds details about calls to the GoAway method.
 		GoAway []struct {
 			// Code is the code argument value.
 			Code http2.ErrCode
+			// DebugData is the debugData argument value.
+			DebugData []byte
 		}
 		// ID holds details about calls to the ID method.
 		ID []struct {
@@ -342,6 +467,9 @@ type StreamMock struct {
 		IoError []struct {
 			// Err is the err argument value.
 			Err error
+		}
+		// LastByteSent holds details about calls to the LastByteSent method.
+		LastByteSent []struct {
 		}
 		// OnHeader holds details about calls to the OnHeader method.
 		OnHeader []struct {
@@ -355,20 +483,32 @@ type StreamMock struct {
 			// Code is the code argument value.
 			Code http2.ErrCode
 		}
+		// RequestError holds details about calls to the RequestError method.
+		RequestError []struct {
+			// Err is the err argument value.
+			Err error
+		}
 		// SetSize holds details about calls to the SetSize method.
 		SetSize []struct {
 			// N is the n argument value.
 			N int
 		}
+		// Timeout holds details about calls to the Timeout method.
+		Timeout []struct {
+		}
 	}
-	lockEnd       sync.RWMutex
-	lockFC        sync.RWMutex
-	lockGoAway    sync.RWMutex
-	lockID        sync.RWMutex
-	lockIoError   sync.RWMutex
-	lockOnHeader  sync.RWMutex
-	lockRSTStream sync.RWMutex
-	lockSetSize   sync.RWMutex
+	lockEnd           sync.RWMutex
+	lockFC            sync.RWMutex
+	lockFirstByteSent sync.RWMutex
+	lockGoAway        sync.RWMutex
+	lockID            sync.RWMutex
+	lockIoError       sync.RWMutex
+	lockLastByteSent  sync.RWMutex
+	lockOnHeader      sync.RWMutex
+	lockRSTStream     sync.RWMutex
+	lockRequestError  sync.RWMutex
+	lockSetSize       sync.RWMutex
+	lockTimeout       sync.RWMutex
 }
 
 // End calls EndFunc.
@@ -425,20 +565,49 @@ func (mock *StreamMock) FCCalls() []struct {
 	return calls
 }
 
+// FirstByteSent calls FirstByteSentFunc.
+func (mock *StreamMock) FirstByteSent() {
+	if mock.FirstByteSentFunc == nil {
+		panic("StreamMock.FirstByteSentFunc: method is nil but Stream.FirstByteSent was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockFirstByteSent.Lock()
+	mock.calls.FirstByteSent = append(mock.calls.FirstByteSent, callInfo)
+	mock.lockFirstByteSent.Unlock()
+	mock.FirstByteSentFunc()
+}
+
+// FirstByteSentCalls gets all the calls that were made to FirstByteSent.
+// Check the length with:
+//
+//	len(mockedStream.FirstByteSentCalls())
+func (mock *StreamMock) FirstByteSentCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockFirstByteSent.RLock()
+	calls = mock.calls.FirstByteSent
+	mock.lockFirstByteSent.RUnlock()
+	return calls
+}
+
 // GoAway calls GoAwayFunc.
-func (mock *StreamMock) GoAway(code http2.ErrCode) {
+func (mock *StreamMock) GoAway(code http2.ErrCode, debugData []byte) {
 	if mock.GoAwayFunc == nil {
 		panic("StreamMock.GoAwayFunc: method is nil but Stream.GoAway was just called")
 	}
 	callInfo := struct {
-		Code http2.ErrCode
+		Code      http2.ErrCode
+		DebugData []byte
 	}{
-		Code: code,
+		Code:      code,
+		DebugData: debugData,
 	}
 	mock.lockGoAway.Lock()
 	mock.calls.GoAway = append(mock.calls.GoAway, callInfo)
 	mock.lockGoAway.Unlock()
-	mock.GoAwayFunc(code)
+	mock.GoAwayFunc(code, debugData)
 }
 
 // GoAwayCalls gets all the calls that were made to GoAway.
@@ -446,10 +615,12 @@ func (mock *StreamMock) GoAway(code http2.ErrCode) {
 //
 //	len(mockedStream.GoAwayCalls())
 func (mock *StreamMock) GoAwayCalls() []struct {
-	Code http2.ErrCode
+	Code      http2.ErrCode
+	DebugData []byte
 } {
 	var calls []struct {
-		Code http2.ErrCode
+		Code      http2.ErrCode
+		DebugData []byte
 	}
 	mock.lockGoAway.RLock()
 	calls = mock.calls.GoAway
@@ -513,6 +684,33 @@ func (mock *StreamMock) IoErrorCalls() []struct {
 	mock.lockIoError.RLock()
 	calls = mock.calls.IoError
 	mock.lockIoError.RUnlock()
+	return calls
+}
+
+// LastByteSent calls LastByteSentFunc.
+func (mock *StreamMock) LastByteSent() {
+	if mock.LastByteSentFunc == nil {
+		panic("StreamMock.LastByteSentFunc: method is nil but Stream.LastByteSent was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockLastByteSent.Lock()
+	mock.calls.LastByteSent = append(mock.calls.LastByteSent, callInfo)
+	mock.lockLastByteSent.Unlock()
+	mock.LastByteSentFunc()
+}
+
+// LastByteSentCalls gets all the calls that were made to LastByteSent.
+// Check the length with:
+//
+//	len(mockedStream.LastByteSentCalls())
+func (mock *StreamMock) LastByteSentCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockLastByteSent.RLock()
+	calls = mock.calls.LastByteSent
+	mock.lockLastByteSent.RUnlock()
 	return calls
 }
 
@@ -584,6 +782,38 @@ func (mock *StreamMock) RSTStreamCalls() []struct {
 	return calls
 }
 
+// RequestError calls RequestErrorFunc.
+func (mock *StreamMock) RequestError(err error) {
+	if mock.RequestErrorFunc == nil {
+		panic("StreamMock.RequestErrorFunc: method is nil but Stream.RequestError was just called")
+	}
+	callInfo := struct {
+		Err error
+	}{
+		Err: err,
+	}
+	mock.lockRequestError.Lock()
+	mock.calls.RequestError = append(mock.calls.RequestError, callInfo)
+	mock.lockRequestError.Unlock()
+	mock.RequestErrorFunc(err)
+}
+
+// RequestErrorCalls gets all the calls that were made to RequestError.
+// Check the length with:
+//
+//	len(mockedStream.RequestErrorCalls())
+func (mock *StreamMock) RequestErrorCalls() []struct {
+	Err error
+} {
+	var calls []struct {
+		Err error
+	}
+	mock.lockRequestError.RLock()
+	calls = mock.calls.RequestError
+	mock.lockRequestError.RUnlock()
+	return calls
+}
+
 // SetSize calls SetSizeFunc.
 func (mock *StreamMock) SetSize(n int) {
 	if mock.SetSizeFunc == nil {
@@ -613,6 +843,33 @@ func (mock *StreamMock) SetSizeCalls() []struct {
 	mock.lockSetSize.RLock()
 	calls = mock.calls.SetSize
 	mock.lockSetSize.RUnlock()
+	return calls
+}
+
+// Timeout calls TimeoutFunc.
+func (mock *StreamMock) Timeout() {
+	if mock.TimeoutFunc == nil {
+		panic("StreamMock.TimeoutFunc: method is nil but Stream.Timeout was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockTimeout.Lock()
+	mock.calls.Timeout = append(mock.calls.Timeout, callInfo)
+	mock.lockTimeout.Unlock()
+	mock.TimeoutFunc()
+}
+
+// TimeoutCalls gets all the calls that were made to Timeout.
+// Check the length with:
+//
+//	len(mockedStream.TimeoutCalls())
+func (mock *StreamMock) TimeoutCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockTimeout.RLock()
+	calls = mock.calls.Timeout
+	mock.lockTimeout.RUnlock()
 	return calls
 }
 

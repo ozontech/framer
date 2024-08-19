@@ -17,12 +17,14 @@ func NewWrapper(opts ...Opt) *Wrapper {
 	for _, o := range opts {
 		o.apply(wrapper)
 	}
+
 	return wrapper
 }
 
 func (ww *Wrapper) SetWriter(w io.Writer) { ww.Writer = w }
-func (ww *Wrapper) WriteField(k, v string) error {
-	return ww.enc.WriteField(hpack.HeaderField{
+func (ww *Wrapper) WriteField(k, v string) {
+	//nolint:errcheck // всегда пишем в буфер, это безопасно
+	ww.enc.WriteField(hpack.HeaderField{
 		Name:  k,
 		Value: v,
 	})

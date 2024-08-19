@@ -53,7 +53,7 @@ func main() {
 
 	err := g.Wait()
 	if err != nil {
-		fmt.Printf("server exited: " + err.Error())
+		fmt.Println("server exited: " + err.Error())
 		os.Exit(1)
 	}
 }
@@ -543,7 +543,7 @@ type noopFrameProcessor struct{}
 func (p noopFrameProcessor) Process(
 	_ frameheader.FrameHeader,
 	_ []byte,
-	incomplete bool,
+	_ bool,
 ) error {
 	return nil
 }
@@ -601,7 +601,7 @@ type settingsProcessor struct{}
 
 func (p settingsProcessor) Process(
 	header frameheader.FrameHeader,
-	payload []byte,
+	_ []byte,
 	incomplete bool,
 ) error {
 	if incomplete {

@@ -9,14 +9,21 @@ import (
 const nChar = '\n'
 
 type Reader struct {
-	buf         [4096]byte
+	buf         []byte
 	unprocessed []byte
 
 	r io.Reader
 }
 
-func NewReader(r io.Reader) *Reader {
-	return &Reader{r: r}
+func NewReader(r io.Reader, bufSize ...int) *Reader {
+	size := 4096
+	if len(bufSize) > 0 {
+		size = bufSize[0]
+	}
+	return &Reader{
+		buf: make([]byte, size),
+		r:   r,
+	}
 }
 
 func (r *Reader) fillUnprocessed() error {
@@ -72,11 +79,7 @@ func (r *Reader) ReadNext(b []byte) ([]byte, error) {
 		r.unprocessed = r.unprocessed[n:]
 	}
 
-	for len(r.unprocessed) > 0 {
-		if r.unprocessed[0] != nChar {
-			break
-		}
-		r.unprocessed = r.unprocessed[1:]
+	for {
 		if len(r.unprocessed) == 0 {
 			err = r.fillUnprocessed()
 			if err == io.EOF {
@@ -85,6 +88,11 @@ func (r *Reader) ReadNext(b []byte) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			if r.unprocessed[0] != nChar {
+				break
+			}
+			r.unprocessed = r.unprocessed[1:]
 		}
 	}
 

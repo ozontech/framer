@@ -5,24 +5,24 @@ import (
 	"sync"
 
 	"github.com/jhump/protoreflect/desc"
-	"google.golang.org/protobuf/types/dynamicpb"
+	"github.com/jhump/protoreflect/dynamic"
 )
 
 type DynamicMessagesStore interface {
 	// must return nil if not found
-	Get(methodName []byte) (message *dynamicpb.Message, release func())
+	Get(methodName []byte) (message *dynamic.Message, release func())
 }
 
 type dynamicMessagesStore struct {
 	items map[string]*sync.Pool
 }
 
-func (s *dynamicMessagesStore) Get(methodName []byte) (*dynamicpb.Message, func()) {
+func (s *dynamicMessagesStore) Get(methodName []byte) (*dynamic.Message, func()) {
 	pool, ok := s.items[string(methodName)]
 	if !ok {
 		return nil, nil
 	}
-	message := pool.Get().(*dynamicpb.Message)
+	message := pool.Get().(*dynamic.Message)
 	return message, func() { pool.Put(message) }
 }
 
@@ -33,7 +33,7 @@ func NewDynamicMessagesStore(descriptors []*desc.MethodDescriptor) DynamicMessag
 
 		fqn := string(NormalizeMethod([]byte(descriptor.GetFullyQualifiedName())))
 		items[fqn] = &sync.Pool{New: func() interface{} {
-			return dynamicpb.NewMessage(descriptor.GetInputType().UnwrapMessage())
+			return dynamic.NewMessage(descriptor.GetInputType())
 		}}
 	}
 	return &dynamicMessagesStore{items}

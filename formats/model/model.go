@@ -31,7 +31,7 @@ type RequestReader interface {
 	ReadNext([]byte) ([]byte, error)
 }
 
-type PooledRequestReder interface {
+type PooledRequestReader interface {
 	ReadNext() ([]byte, error)
 	Release([]byte)
 }
@@ -41,7 +41,7 @@ type RequestWriter interface {
 }
 
 type InputFormat struct {
-	Reader  PooledRequestReder
+	Reader  PooledRequestReader
 	Decoder Unmarshaler
 }
 

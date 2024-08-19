@@ -4,9 +4,8 @@
 package reciever
 
 import (
-	"sync"
-
 	"github.com/ozontech/framer/frameheader"
+	"sync"
 )
 
 // Ensure, that FrameTypeProcessorMock does implement FrameTypeProcessor.

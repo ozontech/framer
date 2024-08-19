@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"sync/atomic"
 	"time"
@@ -19,6 +18,7 @@ import (
 	fc "github.com/ozontech/framer/loader/flowcontrol"
 	"github.com/ozontech/framer/loader/reciever"
 	"github.com/ozontech/framer/loader/sender"
+	"github.com/ozontech/framer/loader/streams/limiter"
 	streamsPool "github.com/ozontech/framer/loader/streams/pool"
 	streamsStore "github.com/ozontech/framer/loader/streams/store"
 	"github.com/ozontech/framer/loader/types"
@@ -46,20 +46,33 @@ type Loader struct {
 	log *zap.Logger
 }
 
+var loaderID atomic.Uint32
+
 func NewLoader(
 	conn net.Conn,
-	reporter types.Reporter,
+	reporter types.LoaderReporter,
 	timeout time.Duration,
+	disableSendBatching bool,
 	log *zap.Logger,
 ) (*Loader, error) {
-	conf := loaderConfig{timeout: timeout}
+	loaderID := loaderID.Add(1)
+	log = log.Named("loader").With(zap.Uint32("loader-id", loaderID))
+	conf := loaderConfig{
+		timeout:             timeout,
+		disableSendBatching: disableSendBatching,
+	}
 
 	err := conn.SetDeadline(time.Now().Add(conf.timeout))
 	if err != nil {
 		return nil, fmt.Errorf("set conn deadline: %w", err)
 	}
 
-	err = setupHTTP2(conn, conn, &conf)
+	setupLog := log
+	if loaderID != 1 {
+		setupLog = log.WithOptions(zap.IncreaseLevel(zap.ErrorLevel))
+	}
+
+	err = setupHTTP2(conn, conn, &conf, setupLog)
 	if err != nil {
 		return nil, err
 	}
@@ -68,11 +81,14 @@ func NewLoader(
 }
 
 type loaderConfig struct {
-	timeout              time.Duration
+	disableSendBatching bool
+	timeout             time.Duration
+
 	maxConcurrentStreams uint32
 	initialWindowSize    uint32
 	maxDymanicTableSize  uint32
 	maxFrameSize         uint32
+	maxHeaderListSize    uint32
 }
 
 var i int32
@@ -87,25 +103,18 @@ func newLoader(
 		conf.timeout = consts.DefaultTimeout
 	}
 	loaderID := atomic.AddInt32(&i, 1)
-	log = log.Named("loader").With(zap.Int32("loader-id", loaderID))
 	log.Debug("loader created")
 
-	streamsStore := streamsStore.NewShardedStreamsMap(16, func() types.StreamStore {
-		return streamsStore.NewStreamsMap()
-	})
 	timeoutQueue := NewTimeoutQueue(conf.timeout)
 	fcConn := fc.NewFlowControl(consts.DefaultInitialWindowSize) // для соединения (по спеке игнорирует SETTINGS_INITIAL_WINDOW_SIZE)
 
 	var streamPoolOpts []streamsPool.Opt
-	if conf.maxConcurrentStreams != 0 {
-		streamPoolOpts = append(streamPoolOpts, streamsPool.WithMaxConcurrentStreams(conf.maxConcurrentStreams))
-	}
 	if conf.initialWindowSize != 0 {
 		streamPoolOpts = append(streamPoolOpts, streamsPool.WithInitialWindowSize(conf.initialWindowSize))
 	}
 	streamsPool := streamsPool.NewStreamsPool(reporter, streamPoolOpts...)
 
-	var hpackWrapperOpts []hpackwrapper.Opt
+	hpackWrapperOpts := []hpackwrapper.Opt{}
 	if conf.maxDymanicTableSize != 0 {
 		hpackWrapperOpts = append(hpackWrapperOpts, hpackwrapper.WithMaxDynamicTableSize(conf.maxDymanicTableSize))
 	}
@@ -116,22 +125,36 @@ func newLoader(
 		maxFrameSize = int(conf.maxFrameSize)
 	}
 
+	maxHeaderListSize := consts.DefaultMaxHeaderListSize
+	if conf.maxHeaderListSize != 0 {
+		maxHeaderListSize = int(conf.maxHeaderListSize)
+	}
+
 	priorityFramesCh := make(chan []byte, 1)
+	streams := types.Streams{
+		Pool:    streamsPool,
+		Limiter: limiter.New(conf.maxConcurrentStreams),
+		Store: streamsStore.NewShardedStreamsMap(16, func() types.StreamStore {
+			return streamsStore.NewStreamsMap(1)
+		}),
+	}
 	return &Loader{
 		conn:         conn,
 		timeoutQueue: timeoutQueue,
 		log:          log,
 		loaderID:     loaderID,
 
-		streamsStore: streamsStore,
+		streamsStore: streams.Store,
 
 		streamsPool: streamsPool,
 		sender: sender.NewSender(
-			conn, fcConn, priorityFramesCh, streamsPool,
-			streamsStore, hpackWrapper, maxFrameSize,
+			log,
+			conn, fcConn, priorityFramesCh, streams, hpackWrapper,
+			maxFrameSize, maxHeaderListSize,
+			conf.disableSendBatching,
 		),
 		reciever: reciever.NewReciever(
-			conn, fcConn, priorityFramesCh, streamsStore,
+			conn, fcConn, priorityFramesCh, streams,
 		),
 	}
 }
@@ -237,9 +260,14 @@ func (l *Loader) runReciever(ctx context.Context) (err error) {
 		return err
 	}
 
+	l.log.Info(
+		"got goaway",
+		zap.Uint32("last_stream_id", goAwayErr.LastStreamID),
+		zap.ByteString("debug_data", goAwayErr.DebugData),
+	)
 	l.streamsStore.Each(func(s types.Stream) {
 		if s.ID() > goAwayErr.LastStreamID {
-			s.GoAway(goAwayErr.Code)
+			s.GoAway(goAwayErr.Code, goAwayErr.DebugData)
 			s.End()
 		}
 	})
@@ -261,10 +289,19 @@ func (l *Loader) runSender(ctx context.Context) (err error) {
 }
 
 func (l *Loader) DoRequest(req types.Req) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+
+		l.log.Error("shoot panicked", zap.Any("panic", r))
+		panic(r)
+	}()
 	l.sender.Send(req)
 }
 
-func setupHTTP2(r io.Reader, w io.Writer, conf *loaderConfig) error {
+func setupHTTP2(r io.Reader, w io.Writer, conf *loaderConfig, log *zap.Logger) error {
 	// we should not check n, because Write must return error on n < len(clientPreface)
 	_, err := w.Write(clientPreface)
 	if err != nil {
@@ -284,8 +321,10 @@ func setupHTTP2(r io.Reader, w io.Writer, conf *loaderConfig) error {
 		return errors.New("protocol error: first frame from server is not settings")
 	}
 
+	var logFields []zap.Field
 	for i := 0; i < sf.NumSettings(); i++ {
 		s := sf.Setting(i)
+		logFields = append(logFields, zap.Uint32("setting_"+s.ID.String(), s.Val))
 		switch s.ID {
 		case http2.SettingInitialWindowSize:
 			conf.initialWindowSize = s.Val
@@ -295,15 +334,21 @@ func setupHTTP2(r io.Reader, w io.Writer, conf *loaderConfig) error {
 			conf.maxDymanicTableSize = s.Val
 		case http2.SettingMaxFrameSize:
 			conf.maxFrameSize = s.Val
+		case http2.SettingMaxHeaderListSize:
+			conf.maxHeaderListSize = s.Val
 		default:
-			return fmt.Errorf("got not supported setting: %s (%d)", s.ID.String(), s.Val)
+			log.Sugar().Warnf("got not supported setting: %s (%d)", s.ID.String(), s.Val)
 		}
 	}
+	log.Info("got settings", logFields...)
 
-	err = framer.WriteSettings(http2.Setting{
-		ID:  http2.SettingInitialWindowSize,
-		Val: math.MaxUint32 & 0x7fffffff, // mask off high reserved bit
-	})
+	err = framer.WriteSettings(
+	// TODO: C# have problems and disconnect with FLOW_CONTROL_ERROR
+	// http2.Setting{
+	// 	ID:  http2.SettingInitialWindowSize,
+	// 	Val: math.MaxUint32 & 0x7fffffff, // mask off high reserved bit
+	// },
+	)
 	if err != nil {
 		return fmt.Errorf("write settings frame: %w", err)
 	}
@@ -313,10 +358,11 @@ func setupHTTP2(r io.Reader, w io.Writer, conf *loaderConfig) error {
 		return fmt.Errorf("write settings ack: %w", err)
 	}
 
-	err = framer.WriteWindowUpdate(0, math.MaxUint32&0x7fffffff)
-	if err != nil {
-		return fmt.Errorf("write window update frame: %w", err)
-	}
+	// TODO: C# have problems and disconnect with FLOW_CONTROL_ERROR
+	// err = framer.WriteWindowUpdate(0, math.MaxUint32&0x7fffffff)
+	// if err != nil {
+	// 	return fmt.Errorf("write window update frame: %w", err)
+	// }
 
 	return nil
 }

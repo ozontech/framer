@@ -1,14 +1,17 @@
 package consts
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 const (
-	ChunksBufferSize    = 2048
 	RecieveBufferSize   = 2048
 	SendBatchTimeout    = time.Millisecond
 	RecieveBatchTimeout = time.Millisecond
 
 	DefaultInitialWindowSize = 65_535
 	DefaultTimeout           = 11 * time.Second
-	DefaultMaxFrameSize      = 16384 // Максимальная длина пейлоада фрейма в grpc. У http2 ограничение больше.
+	DefaultMaxFrameSize      = 16384 // DefaultMaxFrameSize - максимальная длина пейлоада фрейма в grpc. У http2 ограничение больше.
+	DefaultMaxHeaderListSize = math.MaxUint32
 )

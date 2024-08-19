@@ -4,11 +4,17 @@ import "io"
 
 type HPackFieldWriter interface {
 	SetWriter(w io.Writer)
-	WriteField(k, v string) error
+	WriteField(k, v string)
 }
 
 type Req interface {
-	SetUp(maxFramePayloadLen int, streamID uint32, fieldWriter HPackFieldWriter) []Frame
+	SetUp(
+		maxFramePayloadLen int,
+		maxHeaderListSize int,
+		streamID uint32,
+		fieldWriter HPackFieldWriter,
+	) ([]Frame, error)
+	FullMethodName() string
 	Tag() string
 	Size() int
 	Releaser

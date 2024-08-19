@@ -9,8 +9,6 @@ import (
 	"github.com/ozontech/framer/formats/internal/kv"
 	jsonkv "github.com/ozontech/framer/formats/internal/kv/json"
 	"github.com/ozontech/framer/formats/model"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 )
 
 type Encoder struct {
@@ -37,13 +35,14 @@ func (encoder *Encoder) MarshalAppend(b []byte, d *model.Data) ([]byte, error) {
 	b = encoder.metaMarshaler.MarshalAppend(b, d.Metadata)
 	b = append(b, `,"payload":`...)
 
-	if err := proto.Unmarshal(d.Message, message); err != nil {
+	if err := message.Unmarshal(d.Message); err != nil {
 		return b, fmt.Errorf("unmarshaling binary payload for %s: %w", d.Method, err)
 	}
-	b, err := protojson.MarshalOptions{}.MarshalAppend(b, message)
+	jsonBody, err := message.MarshalJSON()
 	if err != nil {
 		return b, fmt.Errorf("protojson marshal: %w", err)
 	}
+	b = append(b, jsonBody...)
 	return append(b, '}'), nil
 }
 

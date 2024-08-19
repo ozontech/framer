@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jhump/protoreflect/dynamic"
 	"github.com/mailru/easyjson/jlexer"
 	"github.com/ozontech/framer/formats/grpc/ozon/json/encoding/reflection"
 	"github.com/ozontech/framer/formats/internal/kv"
 	jsonkv "github.com/ozontech/framer/formats/internal/kv/json"
 	"github.com/ozontech/framer/formats/model"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 type DecoderOption func(*Decoder)
@@ -48,7 +46,7 @@ func (decoder *Decoder) Unmarshal(d *model.Data, b []byte) error {
 
 	var (
 		jsonPayload    []byte
-		dynamicMessage *dynamicpb.Message
+		dynamicMessage *dynamic.Message
 	)
 	in.Delim('{')
 	for !in.IsDelim('}') {
@@ -86,13 +84,13 @@ func (decoder *Decoder) Unmarshal(d *model.Data, b []byte) error {
 		return fmt.Errorf(`"call" is required`)
 	}
 
-	if err = protojson.Unmarshal(jsonPayload, dynamicMessage); err != nil {
+	if err = dynamicMessage.UnmarshalJSON(jsonPayload); err != nil {
 		return fmt.Errorf(
 			"unmarshalling json payload for %s: %w",
 			d.Method, err,
 		)
 	}
-	d.Message, err = proto.MarshalOptions{}.MarshalAppend(d.Message, dynamicMessage)
+	d.Message, err = dynamicMessage.MarshalAppend(d.Message)
 	if err != nil {
 		return fmt.Errorf("marshaling grpc message into binary: %w", err)
 	}

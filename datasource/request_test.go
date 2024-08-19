@@ -10,7 +10,8 @@ import (
 	"golang.org/x/net/http2/hpack"
 
 	"github.com/ozontech/framer/consts"
-	"github.com/ozontech/framer/formats/model"
+	"github.com/ozontech/framer/datasource/decoder"
+	"github.com/ozontech/framer/loader/types"
 	hpackwrapper "github.com/ozontech/framer/utils/hpack_wrapper"
 )
 
@@ -48,14 +49,19 @@ func TestFrameHeadersPool(t *testing.T) {
 	}
 }
 
+type metaMW struct{}
+
+func (metaMW) IsAllowed(string) bool { return true }
+func (metaMW) WriteAdditional(fw types.HPackFieldWriter) {
+	fw.WriteField(":method", "POST")
+	fw.WriteField(":authority", ":authority-v")
+	fw.WriteField("regular-k", "regular-v")
+}
+
 func TestRequest1(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
-	r := NewRequestAdapter(
-		func(string) bool { return true },
-		[]string{":method", "POST", ":authority", ":authority-v"},
-		[]string{"regular-k", "regular-v"},
-	)
+	r := NewRequestAdapter(metaMW{})
 	buf := bytes.NewBuffer(nil)
 	framer := http2.NewFramer(nil, buf)
 	framer.ReadMetaHeaders = hpack.NewDecoder(4098, nil)
@@ -63,12 +69,12 @@ func TestRequest1(t *testing.T) {
 	const interations = 10
 	for i := 0; i < interations; i++ {
 		message := []byte("this is message")
-		r.data = model.Data{
-			Tag:    []byte("tag"),
-			Method: []byte("/method"),
-			Metadata: []model.Meta{
-				{Name: []byte("k1"), Value: []byte("v1")},
-				{Name: []byte("k2"), Value: []byte("v2")},
+		r.data = decoder.Data{
+			Tag:    "tag",
+			Method: "/method",
+			Metadata: []decoder.Meta{
+				{Name: "k1", Value: "v1"},
+				{Name: "k2", Value: "v2"},
 			},
 			Message: message,
 		}
@@ -77,7 +83,8 @@ func TestRequest1(t *testing.T) {
 
 		hpw := hpackwrapper.NewWrapper()
 		const streamID uint32 = 123
-		frames := r.SetUp(consts.DefaultMaxFrameSize, streamID, hpw)
+		frames, err := r.SetUp(consts.DefaultMaxFrameSize, consts.DefaultMaxHeaderListSize, streamID, hpw)
+		a.NoError(err)
 		a.Len(frames, 2)
 		for _, f := range frames {
 			for _, c := range f.Chunks {

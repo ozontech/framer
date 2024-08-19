@@ -10,6 +10,7 @@ import (
 	"github.com/jhump/protoreflect/desc/protoparse"
 	"github.com/jhump/protoreflect/grpcreflect"
 	"google.golang.org/grpc"
+	reflectpb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 )
 
 type Fetcher interface {
@@ -92,7 +93,7 @@ func (f *RemoteFetcher) Warnings() []string {
 }
 
 func (f *RemoteFetcher) Fetch(ctx context.Context) (DynamicMessagesStore, error) {
-	refClient := grpcreflect.NewClientAuto(ctx, f.conn)
+	refClient := grpcreflect.NewClient(ctx, reflectpb.NewServerReflectionClient(f.conn))
 	listServices, err := refClient.ListServices()
 	if err != nil {
 		return nil, fmt.Errorf("reflection fetching: %w", err)

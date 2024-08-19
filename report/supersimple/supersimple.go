@@ -3,7 +3,6 @@ package supersimple
 import (
 	"fmt"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -15,8 +14,6 @@ import (
 type Reporter struct {
 	pool    *pool.SlicePool[*streamState]
 	closeCh chan struct{}
-
-	timeout time.Duration
 
 	start time.Time
 	ok    atomic.Uint32
@@ -31,14 +28,13 @@ type Reporter struct {
 	lastTime time.Time
 }
 
-func New(timeout time.Duration) *Reporter {
+func New() *Reporter {
 	now := time.Now()
 	return &Reporter{
 		pool:     pool.NewSlicePoolSize[*streamState](100),
 		closeCh:  make(chan struct{}),
 		start:    now,
 		lastTime: now,
-		timeout:  timeout,
 	}
 }
 
@@ -61,11 +57,11 @@ func (a *Reporter) Close() error {
 	return nil
 }
 
-func (a *Reporter) Acquire(tag string) types.StreamState {
+func (a *Reporter) Acquire(tag string, _ uint32) types.StreamState {
 	a.req.Add(1)
 	ss, ok := a.pool.Acquire()
 	if !ok {
-		ss = &streamState{reporter: a, ctime: new(syscall.Timeval)}
+		ss = &streamState{reporter: a}
 	}
 	ss.reset(tag)
 	return ss
@@ -73,9 +69,9 @@ func (a *Reporter) Acquire(tag string) types.StreamState {
 
 func (a *Reporter) accept(s *streamState) {
 	if s.result() {
-		a.nook.Add(1)
-	} else {
 		a.ok.Add(1)
+	} else {
+		a.nook.Add(1)
 	}
 
 	a.pool.Release(s)
@@ -116,21 +112,14 @@ func (a *Reporter) report(now time.Time) {
 type streamState struct {
 	reporter *Reporter
 	noOk     bool
-	ctime    *syscall.Timeval
-}
-
-func init() {
-	ctime := new(syscall.Timeval)
-	err := syscall.Gettimeofday(ctime)
-	if err != nil {
-		panic("Gettimeofday syscall unavailable?: " + err.Error())
-	}
 }
 
 func (s *streamState) reset(_ string) {
-	syscall.Gettimeofday(s.ctime) //nolint:errcheck // syscall checked above
 	s.noOk = false
 }
+
+func (s *streamState) FirstByteSent() {}
+func (s *streamState) LastByteSent()  {}
 
 func (s *streamState) SetSize(size int) {
 	s.reporter.addSize(size)
@@ -142,18 +131,14 @@ func (s *streamState) OnHeader(name, value string) {
 	}
 }
 
-func (s *streamState) IoError(error)           { s.noOk = true }
-func (s *streamState) RSTStream(http2.ErrCode) { s.noOk = true }
-func (s *streamState) GoAway(http2.ErrCode)    { s.noOk = true }
+func (s *streamState) RequestError(error)           { s.noOk = true }
+func (s *streamState) IoError(error)                { s.noOk = true }
+func (s *streamState) RSTStream(http2.ErrCode)      { s.noOk = true }
+func (s *streamState) GoAway(http2.ErrCode, []byte) { s.noOk = true }
+func (s *streamState) Timeout()                     { s.noOk = true }
 
 func (s *streamState) result() (ok bool) {
-	if s.noOk {
-		return false
-	}
-	if time.Duration(s.ctime.Nano()) > s.reporter.timeout {
-		return false
-	}
-	return true
+	return !s.noOk
 }
 
 func (s *streamState) End() {

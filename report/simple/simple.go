@@ -56,13 +56,13 @@ func (a *Reporter) Close() error {
 	return nil
 }
 
-func (a *Reporter) Acquire(tag string) types.StreamState {
+func (a *Reporter) Acquire(_ string, _ uint32) types.StreamState {
 	a.req.Add(1)
 	ss, ok := a.pool.Acquire()
 	if !ok {
 		ss = &streamState{reporter: a}
 	}
-	ss.reset(tag)
+	ss.reset()
 	return ss
 }
 
@@ -109,21 +109,18 @@ func (a *Reporter) report(now time.Time) {
 type streamState struct {
 	reporter *Reporter
 	size     int
-	timeout  time.Duration
 
+	timeouted      bool
 	grpcCodeStr    string
 	grpcMessageStr string
 	code           http2.ErrCode
 	goAway         bool
 	ioErr          error
-
-	ctime time.Time
-	tag   string
+	requestErr     error
 }
 
-func (s *streamState) reset(tag string) {
-	s.tag = tag
-	s.ctime = time.Now()
+func (s *streamState) reset() {
+	s.timeouted = false
 
 	s.size = 0
 	s.grpcCodeStr = ""
@@ -131,6 +128,9 @@ func (s *streamState) reset(tag string) {
 	s.code = 0
 	s.ioErr = nil
 }
+
+func (s *streamState) FirstByteSent() {}
+func (s *streamState) LastByteSent()  {}
 
 func (s *streamState) SetSize(size int) {
 	s.reporter.addSize(size)
@@ -145,6 +145,10 @@ func (s *streamState) OnHeader(name, value string) {
 	}
 }
 
+func (s *streamState) RequestError(err error) {
+	s.requestErr = err
+}
+
 func (s *streamState) IoError(err error) {
 	s.ioErr = err
 }
@@ -153,16 +157,21 @@ func (s *streamState) RSTStream(code http2.ErrCode) {
 	s.code = code
 }
 
-func (s *streamState) GoAway(http2.ErrCode) {
+func (s *streamState) GoAway(http2.ErrCode, []byte) {
 	s.goAway = true
 }
 
+func (s *streamState) Timeout() {
+	s.timeouted = true
+}
+
 func (s *streamState) result() (ok bool) {
-	now := time.Now()
 	switch {
-	case s.ctime.Add(s.timeout).Before(now):
+	case s.timeouted:
 		return false
 	case s.code != http2.ErrCodeNo:
+		return false
+	case s.requestErr != nil:
 		return false
 	case s.ioErr != nil:
 		return false
