@@ -53,7 +53,7 @@ func main() {
 
 	err := g.Wait()
 	if err != nil {
-		fmt.Printf("server exited: " + err.Error())
+		fmt.Println("server exited: " + err.Error())
 		os.Exit(1)
 	}
 }
